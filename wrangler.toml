@@ -1,0 +1,33 @@
+name = "smartwallet-cd"
+main = "src/index.ts"
+compatibility_date = "2025-05-05"
+
+# Tägliche Materialization wiederkehrender Zahlungen (03:00 UTC).
+# Lokal testen: npm run dev -- --test-scheduled, dann /__scheduled?cron=0+3+*+*+* aufrufen
+[triggers]
+crons = ["0 3 * * *"]
+
+# Statische Assets (precompiliertes CSS, PWA-Manifest, Icons, Service Worker).
+# Dateien aus ./public werden vor den Worker-Routen ausgeliefert.
+# run_worker_first schützt API- und Seitenrouten davor, durch zukünftige
+# Dateien unter public/ überschattet zu werden.
+[assets]
+directory = "./public"
+html_handling = "none"
+run_worker_first = ["/api/*", "/", "/login", "/register", "/settings", "/dashboard", "/dashboard/*", "/stats", "/recurring", "/recurring/*"]
+
+# D1-Bindung. WICHTIG: Der Bindungsname muss exakt "DB" bleiben – der Code
+# liest c.env.DB.
+#
+# ⚠️ Eigene Kopie/Deployment (smartwallet-cd): dies ist eine NEUE, separate Datenbank,
+# nicht die des Original-Projekts – sonst teilen sich beide Worker dieselben Live-Daten!
+# Anlegen: npx wrangler d1 create smartwallet-cd-db
+# Danach die zurückgegebene UUID unten bei database_id eintragen.
+[[d1_databases]]
+binding = "DB"
+database_name = "smartwallet-cd-db"
+database_id = "73985035-135f-4017-9c5b-48da9731ebf4"
+
+[vars]
+GEMINI_MODEL = "gemini-3.5-flash-lite"
+

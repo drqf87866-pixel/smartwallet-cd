@@ -1,0 +1,39 @@
+/* "Warm Minimal": Newsreader (Akzent/Beträge) + Karla (Fließtext) statt System-Sans */
+@import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,500;0,600;0,700;1,500&family=Karla:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  /* Karten-Baustein – ersetzt die wiederholte Kombination rounded-3xl/bg-white/shadow/ring */
+  .card {
+    @apply rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200;
+  }
+
+  /* Einheitliches Formularfeld (Input & Select) */
+  .input {
+    @apply w-full rounded-xl border border-slate-300 px-3 py-2.5 text-base focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200;
+  }
+
+  /* Einheitliches Feld-Label */
+  .label-text {
+    @apply mb-1 block text-xs text-slate-500;
+  }
+
+  /* Button-Varianten: Terracotta als einzige Primärfarbe */
+  .btn-primary {
+    @apply min-h-[44px] rounded-2xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-50;
+  }
+
+  .btn-secondary {
+    @apply min-h-[44px] rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50;
+  }
+}
+
+/* Gemeinsame Unterkante für Sheets/Overlays: Clearing der Home-Indikator-Fläche.
+   Bewusst außerhalb der Tailwind-Layer definiert, damit die Regel gegen p-5
+   (Utilities) gewinnt. */
+.safe-bottom {
+  padding-bottom: calc(1.25rem + env(safe-area-inset-bottom));
+}

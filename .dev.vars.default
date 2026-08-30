@@ -1,0 +1,11 @@
+# Lokale Secrets (nur Development, nicht committen).
+# Für Deploy: `npx wrangler secret put JWT_SECRET` bzw. `npx wrangler secret put GEMINI_API_KEY`
+JWT_SECRET=dev-only-secret-change-me
+GEMINI_API_KEY=your-gemini-api-key-here
+# Aktiviert POST /api/dev/seed – NUR lokal setzen, nie in Produktion!
+ENABLE_DEV_SEED=true
+
+# Optional: Gemini-Modell/Endpoint überschreiben (Default: gemini-3.5-flash-lite,
+# siehe [vars] in wrangler.toml). GEMINI_API_BASE nur für lokale Tests gegen einen Mock-Server.
+#GEMINI_MODEL=gemini-3.5-flash-lite
+#GEMINI_API_BASE=https://generativelanguage.googleapis.com/v1beta

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Offline · SmartWallet</title>
+    <link rel="stylesheet" href="/assets/app.css" />
+    <style>body { font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }</style>
+  </head>
+  <body class="min-h-screen bg-gradient-to-br from-slate-100 via-indigo-50 to-slate-100 text-slate-800 antialiased">
+    <main class="flex min-h-screen items-center justify-center p-6">
+      <div class="w-full max-w-sm rounded-2xl bg-white p-8 text-center shadow-xl shadow-indigo-100">
+        <div class="text-5xl">📴</div>
+        <h1 class="mt-4 text-xl font-bold tracking-tight">Keine Verbindung</h1>
+        <p class="mt-2 text-sm text-slate-500">
+          SmartWallet braucht für deine Finanzdaten eine Internetverbindung.
+          Bitte prüfe dein Netz und versuche es erneut.
+        </p>
+        <button
+          type="button"
+          onclick="location.reload()"
+          class="mt-6 w-full rounded-lg bg-indigo-600 px-4 py-3 font-semibold text-white transition hover:bg-indigo-700"
+        >
+          Erneut versuchen
+        </button>
+      </div>
+    </main>
+  </body>
+</html>
