@@ -2,7 +2,7 @@ import type { FC } from 'hono/jsx';
 import { frequencyLabel } from '../lib/recurring';
 import type { TransactionAccount, TransactionScope } from '../types';
 import { Layout } from './layout';
-import { BottomNav, CategorySelect, INPUT_CLASS, LABEL_CLASS, MagicSheet, UserChip } from './shared';
+import { BottomNav, CategorySelect, FREQUENCY_OPTIONS, INPUT_CLASS, LABEL_CLASS, MagicSheet, UserChip } from './shared';
 import { fmt, fmtDate } from '../lib/format';
 
 /** Regel inkl. berechnetem nächsten Fälligkeitsdatum (null = inaktiv/keine mehr). */
@@ -22,12 +22,6 @@ export type RecurringRuleView = {
   active: number;
   next_due: string | null;
 };
-
-const FREQUENCY_OPTIONS = [
-  { value: 'monthly', label: 'Monatlich' },
-  { value: 'weekly', label: 'Wöchentlich' },
-  { value: 'yearly', label: 'Jährlich' },
-] as const;
 
 const Icon: FC<{ path: string }> = ({ path }) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" class="h-5 w-5" aria-hidden="true">

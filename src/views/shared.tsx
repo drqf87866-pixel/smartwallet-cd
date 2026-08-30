@@ -5,6 +5,13 @@ import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from '../lib/categories';
 export const INPUT_CLASS = 'input';
 export const LABEL_CLASS = 'label-text';
 
+/** Rhythmus-Optionen für wiederkehrende Zahlungen – geteilt zwischen /recurring und dem Dashboard. */
+export const FREQUENCY_OPTIONS = [
+  { value: 'monthly', label: 'Monatlich' },
+  { value: 'weekly', label: 'Wöchentlich' },
+  { value: 'yearly', label: 'Jährlich' },
+] as const;
+
 /** Kategorie-Dropdown – Optionen werden per JS je nach Art (Ausgabe/Einnahme) befüllt. */
 export const CategorySelect: FC<{ id: string }> = ({ id }) => (
   <select

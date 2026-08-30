@@ -1,7 +1,7 @@
 import type { FC } from 'hono/jsx';
 import type { TransactionAccount, TransactionScope, TransactionType } from '../types';
 import { Layout } from './layout';
-import { BottomNav, CategorySelect, INPUT_CLASS, LABEL_CLASS, MagicSheet, UserChip } from './shared';
+import { BottomNav, CategorySelect, FREQUENCY_OPTIONS, INPUT_CLASS, LABEL_CLASS, MagicSheet, UserChip } from './shared';
 import { fmt, fmtDay, fmtTime } from '../lib/format';
 
 export type DashboardTx = {
@@ -80,6 +80,8 @@ const amountColor = (t: DashboardTx) =>
 const amountSign = (t: DashboardTx) =>
   t.type === 'income' ? '+' : t.type === 'expense' ? '−' : '↗ ';
 const isEditable = (t: DashboardTx) => t.type !== 'settlement' && t.category !== 'Beitrag';
+/** Nur normale Ausgaben/Einnahmen, die noch keiner Regel angehören, lassen sich wiederkehrend einrichten. */
+const canMakeRecurring = (t: DashboardTx) => isEditable(t) && !t.recurring_id && t.type !== 'transfer';
 
 /** Schulden-Zeilen inkl. begleichen-Button – von Mobile- und Desktop-Ansicht geteilt. */
 const DebtRows: FC<{ debts: DebtRow[] }> = ({ debts }) => (
@@ -306,6 +308,18 @@ const TxRow: FC<{ t: DashboardTx }> = ({ t }) => {
             >
               <span aria-hidden="true">✏️</span>
             </button>
+            {canMakeRecurring(t) ? (
+              <button
+                type="button"
+                data-make-recurring
+                data-tx={JSON.stringify(t)}
+                title="Wiederkehrend einrichten"
+                aria-label="Als wiederkehrende Zahlung einrichten"
+                class="ml-1.5 h-8 w-8 rounded border border-violet-200 bg-violet-50 text-sm font-medium text-violet-700 hover:bg-violet-100"
+              >
+                <span aria-hidden="true">🔁</span>
+              </button>
+            ) : null}
             <button
               type="button"
               data-delete={t.id}
@@ -594,6 +608,17 @@ function openEditModal(tx) {
   setTimeout(function () { $('e-amount').focus(); }, 150);
 }
 
+// --- Transaktion als wiederkehrend einrichten ---
+var MAKE_RECURRING_TX = null;
+
+function openMakeRecurringModal(tx) {
+  MAKE_RECURRING_TX = tx;
+  $('mr-summary').textContent = (tx.description || tx.category) + ' · ' + tx.amount + ' € · ab ' + String(tx.date).slice(0, 10);
+  $('mr-frequency').value = 'monthly';
+  $('mr-end-date').value = '';
+  openSheet('make-recurring-overlay');
+}
+
 function syncAllCategoryOptions() {
   ['m-', 'e-'].forEach(function (prefix) {
     syncCategoryOptions(prefix, '');
@@ -682,10 +707,15 @@ document.addEventListener('click', async function (e) {
   var menu = e.target.closest('[data-card-menu]');
   if (menu) {
     var tx = JSON.parse(menu.getAttribute('data-tx'));
-    // Bearbeiten-/Löschen-Button des Aktions-Sheets mit den echten Werten füllen
+    // Bearbeiten-/Wiederkehrend-/Löschen-Button des Aktions-Sheets mit den echten Werten füllen
     var editSheetBtn = document.querySelector('#card-actions-overlay [data-edit]');
+    var mrSheetBtn = document.querySelector('#card-actions-overlay [data-make-recurring]');
     var delSheetBtn = document.querySelector('#card-actions-overlay [data-delete]');
     if (editSheetBtn) editSheetBtn.setAttribute('data-tx', JSON.stringify(tx));
+    if (mrSheetBtn) {
+      mrSheetBtn.setAttribute('data-tx', JSON.stringify(tx));
+      mrSheetBtn.classList.toggle('hidden', !(tx.type !== 'transfer' && !tx.recurring_id));
+    }
     if (delSheetBtn) delSheetBtn.setAttribute('data-delete', tx.id);
     openSheet('card-actions-overlay');
     return;
@@ -694,6 +724,13 @@ document.addEventListener('click', async function (e) {
   var editBtn = e.target.closest('[data-edit]');
   if (editBtn) {
     openEditModal(JSON.parse(editBtn.getAttribute('data-tx')));
+    return;
+  }
+
+  var mrBtn = e.target.closest('[data-make-recurring]');
+  if (mrBtn) {
+    closeSheet('card-actions-overlay');
+    openMakeRecurringModal(JSON.parse(mrBtn.getAttribute('data-tx')));
     return;
   }
 
@@ -758,6 +795,27 @@ document.addEventListener('submit', async function (e) {
       });
       closeSheet('settlement-overlay');
       showToast('Ausgleich gebucht ✓', 'ok');
+      await afterMutation(refreshDashboard);
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      unbusy();
+    }
+    return;
+  }
+
+  if (form.id === 'make-recurring-form') {
+    e.preventDefault();
+    if (!MAKE_RECURRING_TX) return;
+    var body = { frequency: $('mr-frequency').value };
+    var endDate = $('mr-end-date').value;
+    if (endDate) body.end_date = endDate;
+    var unbusy = busy(btn);
+    try {
+      await postJson('/api/transactions/' + MAKE_RECURRING_TX.id + '/make-recurring', body);
+      MAKE_RECURRING_TX = null;
+      closeSheet('make-recurring-overlay');
+      showToast('Wiederkehrend eingerichtet ✓', 'ok');
       await afterMutation(refreshDashboard);
     } catch (err) {
       showToast(err.message, 'error');
@@ -899,6 +957,9 @@ export const DashboardView: FC<DashboardProps> = ({
               <button type="button" data-edit class="flex min-h-[52px] items-center justify-center gap-2 rounded-2xl bg-indigo-600 text-base font-semibold text-white transition active:scale-95">
                 Bearbeiten
               </button>
+              <button type="button" data-make-recurring class="flex min-h-[52px] items-center justify-center gap-2 rounded-2xl border border-violet-200 bg-violet-50 text-base font-semibold text-violet-700 transition active:scale-95">
+                🔁 Wiederkehrend einrichten
+              </button>
               <button type="button" data-delete class="flex min-h-[52px] items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 text-base font-semibold text-red-600 transition active:scale-95">
                 Löschen
               </button>
@@ -1025,6 +1086,55 @@ export const DashboardView: FC<DashboardProps> = ({
                   Änderungen speichern
                 </button>
                 <button type="button" data-close="edit-overlay" class="btn-secondary">
+                  Abbrechen
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        {/* Wiederkehrend einrichten */}
+        <div id="make-recurring-overlay" class="fixed inset-0 z-50 hidden">
+          <div class="absolute inset-0 bg-slate-900/40" data-close="make-recurring-overlay"></div>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="make-recurring-title"
+            class="safe-bottom absolute inset-x-0 bottom-0 rounded-t-2xl bg-white p-5 shadow-xl sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:w-[28rem] sm:max-w-full sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl"
+          >
+            <div class="mx-auto mb-4 h-1.5 w-10 rounded-full bg-slate-200 sm:hidden" aria-hidden="true"></div>
+            <div class="mb-3 flex items-start justify-between">
+              <h2 id="make-recurring-title" class="text-base font-semibold text-slate-800">Wiederkehrend einrichten</h2>
+              <button
+                type="button"
+                data-close="make-recurring-overlay"
+                aria-label="Abbrechen"
+                class="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-500"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" class="h-5 w-5" aria-hidden="true">
+                  <path d="M6 6l12 12M18 6L6 18" />
+                </svg>
+              </button>
+            </div>
+            <p id="mr-summary" class="mb-3 text-sm text-slate-500"></p>
+            <form id="make-recurring-form" class="grid gap-3">
+              <label class="block">
+                <span class={LABEL_CLASS}>Rhythmus</span>
+                <select id="mr-frequency" class={INPUT_CLASS}>
+                  {FREQUENCY_OPTIONS.map((opt) => (
+                    <option value={opt.value} selected={opt.value === 'monthly'}>{opt.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label class="block">
+                <span class={LABEL_CLASS}>Enddatum (optional)</span>
+                <input id="mr-end-date" type="date" autocomplete="off" class={INPUT_CLASS} />
+              </label>
+              <div class="flex gap-2">
+                <button type="submit" class="btn-primary flex-1">
+                  Einrichten
+                </button>
+                <button type="button" data-close="make-recurring-overlay" class="btn-secondary">
                   Abbrechen
                 </button>
               </div>

@@ -2,11 +2,13 @@ import { Hono } from 'hono';
 import type { Env } from '../types';
 import { requireAuth } from '../lib/auth';
 import { validateTransactionInput } from '../lib/validate';
+import { materializeRecurring, validateRecurringInput } from '../lib/recurring';
 
 const transactions = new Hono<Env>();
 
 transactions.use('/api/transactions', requireAuth);
 transactions.use('/api/transactions/:id', requireAuth);
+transactions.use('/api/transactions/:id/make-recurring', requireAuth);
 
 transactions.get('/api/transactions', async (c) => {
   const month = c.req.query('month'); // optional: "YYYY-MM"
@@ -156,6 +158,82 @@ transactions.delete('/api/transactions/:id', async (c) => {
 
   await c.env.DB.prepare('DELETE FROM transactions WHERE id = ?1').bind(id).run();
   return c.json({ ok: true });
+});
+
+/**
+ * Wandelt eine bestehende Transaktion in eine wiederkehrende Regel um:
+ * legt eine recurring_rules-Zeile mit den Transaktionswerten an, verlinkt
+ * die Transaktion rückwirkend (recurring_id) und trägt ihr eigenes
+ * Fälligkeitsdatum als Skip ein, damit die Materialization sie nicht
+ * doppelt anlegt.
+ */
+transactions.post('/api/transactions/:id/make-recurring', async (c) => {
+  const id = Number(c.req.param('id'));
+  const householdId = c.get('householdId');
+  const found = await loadEditableTransaction(c.env.DB, id, householdId);
+  if ('error' in found) {
+    return c.json({ error: found.error }, found.status as 400 | 403 | 404);
+  }
+  const row = found.row;
+
+  if (row.recurring_id != null) {
+    return c.json({ error: 'Diese Transaktion ist bereits Teil einer wiederkehrenden Regel' }, 400);
+  }
+  if (row.type === 'transfer') {
+    return c.json({ error: 'Überweisungen können nicht in eine wiederkehrende Regel umgewandelt werden' }, 400);
+  }
+
+  const body = await c.req.json().catch(() => null);
+  const raw = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
+  const checked = validateRecurringInput({
+    amount: row.amount,
+    type: row.type,
+    category: row.category,
+    description: row.description,
+    scope: row.scope,
+    paid_from: row.paid_from,
+    frequency: raw.frequency,
+    start_date: String(row.date).slice(0, 10),
+    end_date: raw.end_date,
+  });
+  if ('error' in checked) {
+    return c.json({ error: checked.error }, 400);
+  }
+  const r = checked.input;
+
+  const result = await c.env.DB.prepare(
+    `INSERT INTO recurring_rules
+       (household_id, user_id, amount, type, category, description, scope, paid_from,
+        frequency, day, month, start_date, end_date)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+     RETURNING id`,
+  )
+    .bind(
+      householdId, row.user_id, r.amount, r.type, r.category, r.description,
+      r.scope, r.paid_from, r.frequency, r.day, r.month, r.start_date, r.end_date,
+    )
+    .first<{ id: number }>();
+  if (!result) {
+    return c.json({ error: 'Regel konnte nicht angelegt werden' }, 500);
+  }
+
+  await c.env.DB.batch([
+    c.env.DB.prepare('UPDATE transactions SET recurring_id = ?1 WHERE id = ?2').bind(result.id, id),
+    c.env.DB
+      .prepare('INSERT OR IGNORE INTO recurring_skips (recurring_id, due_date) VALUES (?1, ?2)')
+      .bind(result.id, r.start_date),
+  ]);
+
+  // Evtl. weitere seither fällige Vorkommen der neuen Regel nachziehen
+  await materializeRecurring(c.env.DB, householdId);
+
+  return c.json(
+    {
+      transaction: { ...row, id, recurring_id: result.id },
+      rule: { id: result.id, ...r, active: 1 },
+    },
+    201,
+  );
 });
 
 export default transactions;
