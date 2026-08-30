@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { Env } from '../types';
 import { requireAuth } from '../lib/auth';
+import { isCanonicalCategory } from '../lib/categories';
 
 const budgets = new Hono<Env>();
 
@@ -43,6 +44,9 @@ budgets.put('/api/budgets', async (c) => {
     typeof body.category === 'string' ? body.category.trim().slice(0, 50) : '';
   if (category === '') {
     return c.json({ error: 'category darf nicht leer sein' }, 400);
+  }
+  if (category === 'Beitrag' || !isCanonicalCategory(category)) {
+    return c.json({ error: 'Unbekannte Kategorie – bitte eine Kategorie aus der Auswahlliste wählen' }, 400);
   }
 
   const householdId = c.get('householdId');

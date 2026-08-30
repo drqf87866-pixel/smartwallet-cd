@@ -1,4 +1,5 @@
 import type { TransactionAccount, TransactionScope } from '../types';
+import { isAllowedCategory } from './categories';
 
 export type RecurringFrequency = 'weekly' | 'monthly' | 'yearly';
 
@@ -135,6 +136,10 @@ export function validateRecurringInput(
       : 'Sonstiges';
   if (category === 'Beitrag') {
     return { error: 'Die Kategorie "Beitrag" ist reserviert – nutze den Button „Beitrag buchen“' };
+  }
+  // Nur kanonische Kategorien – Freitext würde in Budgets/Statistik silently verloren gehen
+  if (!isAllowedCategory(category, body.type)) {
+    return { error: 'Unbekannte Kategorie – bitte eine Kategorie aus der Auswahlliste wählen' };
   }
   const description =
     typeof body.description === 'string' ? body.description.trim().slice(0, 200) : '';

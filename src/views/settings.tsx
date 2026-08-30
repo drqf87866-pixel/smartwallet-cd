@@ -1,6 +1,6 @@
 import type { FC } from 'hono/jsx';
 import { Layout } from './layout';
-import { BottomNav, INPUT_CLASS } from './shared';
+import { BottomNav, MagicSheet, INPUT_CLASS } from './shared';
 import { fmt } from '../lib/format';
 
 export type MemberInfo = { id: number; name: string; monthly_contribution: number; isAdmin: boolean };
@@ -39,7 +39,11 @@ document.getElementById('copy-invite').addEventListener('click', function () {
 var rotateBtn = document.getElementById('rotate-invite');
 if (rotateBtn) {
   rotateBtn.addEventListener('click', async function () {
-    if (!window.confirm('Neuen Einladungslink generieren? Der bisherige Link wird dann ungültig.')) return;
+    if (!(await confirmSheet({
+      title: 'Neuen Einladungslink generieren?',
+      message: 'Der bisherige Link wird dann ungültig.',
+      confirmText: 'Neu generieren',
+    }))) return;
     try {
       await postJson('/api/household/invite', {}, 'PUT');
       showToast('Einladungslink neu generiert – der alte Link ist ungültig', 'ok');
@@ -53,7 +57,12 @@ if (rotateBtn) {
 document.querySelectorAll('.remove-member').forEach(function (btn) {
   btn.addEventListener('click', async function () {
     var name = btn.dataset.name || 'dieses Mitglied';
-    if (!window.confirm('„' + name + '“ wirklich aus dem Haushalt entfernen? Die Buchungen des Mitglieds werden mitgelöscht.')) return;
+    if (!(await confirmSheet({
+      title: '„' + name + '“ entfernen?',
+      message: 'Das Mitglied wird aus dem Haushalt entfernt. Dessen Buchungen werden dabei unwiderruflich mitgelöscht.',
+      confirmText: 'Entfernen',
+      danger: true,
+    }))) return;
     try {
       await postJson('/api/household/members/' + btn.dataset.id, {}, 'DELETE');
       showToast('Mitglied entfernt', 'ok');
@@ -287,6 +296,7 @@ export const SettingsView: FC<SettingsProps> = ({
     </main>
 
     <BottomNav page="settings" />
+    <MagicSheet />
 
     <script dangerouslySetInnerHTML={{ __html: script }} />
   </Layout>

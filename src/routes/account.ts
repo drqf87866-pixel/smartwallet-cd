@@ -131,9 +131,11 @@ account.post('/api/settlements', async (c) => {
     return Number.isInteger(id) && byId.has(id) ? id : null;
   };
 
+  // Ausgleichszahlungen dürfen nur im eigenen Namen gebucht werden –
+  // sonst könnte jedes Mitglied Buchungen im Namen anderer anlegen.
   const fromId = resolveId(body?.from);
-  if (fromId === null) {
-    return c.json({ error: 'from muss ein Haushaltsmitglied sein' }, 400);
+  if (fromId === null || fromId !== myId) {
+    return c.json({ error: 'from muss "me" sein – Ausgleichszahlungen sind nur im eigenen Namen möglich' }, 400);
   }
   const fromName = byId.get(fromId)!.name;
 

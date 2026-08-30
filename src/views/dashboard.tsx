@@ -650,17 +650,32 @@ updateManualPreview();
 async function refreshDashboard() {
   var month = window.__MONTH;
   if (!month || !$('summary-frag') || !$('tx-frag')) return false;
-  var parts = await Promise.all([
-    fetchFragment('/dashboard/fragments/summary?month=' + month),
-    fetchFragment('/dashboard/fragments/list?month=' + month +
-      '&layout=' + (window.matchMedia('(min-width: 768px)').matches ? 'desktop' : 'mobile')),
-  ]);
-  $('summary-frag').innerHTML = parts[0];
-  $('tx-frag').innerHTML = parts[1];
-  syncAllCategoryOptions();
-  swApplyDefaults('m-');
-  updateManualPreview();
-  return true;
+  var frags = [$('summary-frag'), $('tx-frag')];
+  frags.forEach(function (f) {
+    f.setAttribute('aria-busy', 'true');
+    f.classList.add('opacity-50', 'pointer-events-none', 'transition-opacity');
+  });
+  try {
+    var parts = await Promise.all([
+      fetchFragment('/dashboard/fragments/summary?month=' + month),
+      fetchFragment('/dashboard/fragments/list?month=' + month +
+        '&layout=' + (window.matchMedia('(min-width: 768px)').matches ? 'desktop' : 'mobile')),
+    ]);
+    $('summary-frag').innerHTML = parts[0];
+    $('tx-frag').innerHTML = parts[1];
+    syncAllCategoryOptions();
+    swApplyDefaults('m-');
+    updateManualPreview();
+    return true;
+  } catch (err) {
+    showToast('Aktualisierung fehlgeschlagen – Seite wird neu geladen', 'error');
+    throw err;
+  } finally {
+    frags.forEach(function (f) {
+      f.removeAttribute('aria-busy');
+      f.classList.remove('opacity-50', 'pointer-events-none');
+    });
+  }
 }
 
 window.__afterMutation = function () {
@@ -736,7 +751,12 @@ document.addEventListener('click', async function (e) {
 
   var delBtn = e.target.closest('[data-delete]');
   if (delBtn) {
-    if (!confirm('Diese Transaktion wirklich löschen?')) return;
+    if (!(await confirmSheet({
+      title: 'Transaktion löschen?',
+      message: 'Diese Buchung wird unwiderruflich gelöscht.',
+      confirmText: 'Löschen',
+      danger: true,
+    }))) return;
     try {
       await postJson('/api/transactions/' + delBtn.getAttribute('data-delete'), {}, 'DELETE');
       await afterMutation(refreshDashboard);

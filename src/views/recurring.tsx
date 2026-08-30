@@ -295,7 +295,7 @@ document.addEventListener('click', async function (e) {
     var toggleBtn = document.querySelector('#recurring-actions-overlay [data-rec-toggle]');
     if (bookBtn) {
       bookBtn.disabled = !rule.active || !rule.next_due;
-      bookBtn.textContent = (rule.active && rule.next_due) ? 'Jetzt buchen' : 'Jetzt buchen';
+      bookBtn.textContent = !rule.active ? 'Pausiert' : (rule.next_due ? 'Jetzt buchen' : 'Keine Fälligkeit');
     }
     if (toggleBtn) {
       toggleBtn.textContent = rule.active ? 'Pausieren' : 'Aktivieren';
@@ -312,7 +312,11 @@ document.addEventListener('click', async function (e) {
   var recBook = e.target.closest('[data-rec-book]');
   if (recBook) {
     if (!REC_BOOK) return;
-    if (!confirm('Die nächste Fälligkeit (' + REC_BOOK + ') jetzt sofort buchen? Sie wird dann am Fälligkeitstag nicht erneut gebucht.')) return;
+    if (!(await confirmSheet({
+      title: 'Fälligkeit jetzt buchen?',
+      message: 'Die nächste Fälligkeit (' + REC_BOOK + ') wird sofort gebucht und am Fälligkeitstag nicht erneut.',
+      confirmText: 'Jetzt buchen',
+    }))) return;
     var unbusyBook = busy(recBook);
     try {
       await postJson('/api/recurring/' + REC_EDITING_ID + '/book', {});
@@ -353,7 +357,12 @@ document.addEventListener('click', async function (e) {
 
   var recDelete = e.target.closest('[data-rec-delete]');
   if (recDelete) {
-    if (!confirm('Diese Regel wirklich löschen? Bereits erzeugte Buchungen bleiben bestehen.')) return;
+    if (!(await confirmSheet({
+      title: 'Regel löschen?',
+      message: 'Die Regel wird gelöscht. Bereits erzeugte Buchungen bleiben bestehen.',
+      confirmText: 'Löschen',
+      danger: true,
+    }))) return;
     try {
       await postJson('/api/recurring/' + recDelete.getAttribute('data-rec-delete'), {}, 'DELETE');
       closeSheet('recurring-actions-overlay');

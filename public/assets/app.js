@@ -246,10 +246,68 @@
     if (openOverlays.length === 0) {
       unlockScroll();
     }
+    overlay.dispatchEvent(new CustomEvent('sw:sheet-closed'));
     if (lastFocused && typeof lastFocused.focus === 'function') {
       lastFocused.focus();
       lastFocused = null;
     }
+  };
+
+  /* ------------------------------------------------------------------ */
+  /* Einheitlicher Bestätigungs-Dialog (ersetzt natives confirm())       */
+  /* ------------------------------------------------------------------ */
+
+  window.confirmSheet = function (opts) {
+    opts = opts || {};
+    return new Promise(function (resolve) {
+      var overlay = $('confirm-overlay');
+      if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'confirm-overlay';
+        overlay.className = 'fixed inset-0 z-50 hidden';
+        overlay.innerHTML =
+          '<div class="absolute inset-0 bg-slate-900/40"></div>' +
+          '<div role="dialog" aria-modal="true" aria-labelledby="confirm-title" ' +
+          'class="absolute inset-x-0 bottom-0 mx-auto max-w-md rounded-t-2xl bg-white p-5 shadow-xl safe-bottom">' +
+          '<div class="mx-auto mb-4 h-1.5 w-10 rounded-full bg-slate-200" aria-hidden="true"></div>' +
+          '<h3 id="confirm-title" class="text-base font-semibold text-slate-800"></h3>' +
+          '<p id="confirm-message" class="mt-1.5 text-sm leading-relaxed text-slate-600"></p>' +
+          '<div class="mt-5 grid grid-cols-2 gap-3">' +
+          '<button type="button" id="confirm-cancel" class="flex min-h-[44px] items-center justify-center rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 transition active:scale-95">Abbrechen</button>' +
+          '<button type="button" id="confirm-ok" class="flex min-h-[44px] items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition active:scale-95"></button>' +
+          '</div></div>';
+        document.body.appendChild(overlay);
+      }
+
+      $('confirm-title').textContent = opts.title || 'Sicher?';
+      $('confirm-message').textContent = opts.message || '';
+      var ok = $('confirm-ok');
+      ok.textContent = opts.confirmText || 'Bestätigen';
+      ok.className =
+        'flex min-h-[44px] items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition active:scale-95 ' +
+        (opts.danger ? 'bg-red-600' : 'bg-indigo-600');
+
+      var settled = false;
+      var onClosed = function () {
+        if (!settled) {
+          settled = true;
+          resolve(false);
+        }
+      };
+      overlay.addEventListener('sw:sheet-closed', onClosed);
+      ok.onclick = function () {
+        settled = true;
+        resolve(true);
+        closeSheet('confirm-overlay');
+      };
+      var cancel = function () {
+        closeSheet('confirm-overlay');
+      };
+      $('confirm-cancel').onclick = cancel;
+      overlay.querySelector('.absolute.inset-0.bg-slate-900\\/40').onclick = cancel;
+
+      openSheet('confirm-overlay');
+    });
   };
 
   document.addEventListener('keydown', function (e) {
@@ -292,9 +350,12 @@
     catSel.disabled = isTransfer;
     catSel.innerHTML = '';
     if (desired && cats.indexOf(desired) === -1) {
+      // Alt-Kategorie (nicht mehr kanonisch): sichtbar, aber gesperrt –
+      // beim Speichern erzwingt der Server eine Auswahl aus der Liste.
       var extra = document.createElement('option');
       extra.value = desired;
-      extra.textContent = desired;
+      extra.textContent = desired + ' (alt – bitte neu wählen)';
+      extra.disabled = true;
       catSel.appendChild(extra);
     }
     cats.forEach(function (c) {

@@ -36,3 +36,19 @@ export const INCOME_CATEGORIES = [
 export const ALL_CATEGORIES: string[] = Array.from(
   new Set<string>([...EXPENSE_CATEGORIES, ...INCOME_CATEGORIES, 'Überweisung']),
 );
+
+const EXPENSE_SET = new Set<string>(EXPENSE_CATEGORIES);
+const INCOME_SET = new Set<string>(INCOME_CATEGORIES);
+const ALL_SET = new Set<string>(ALL_CATEGORIES);
+
+/** Zulässige Kategorien je Buchungsart (Grundlage der serverseitigen Validierung). */
+export function isAllowedCategory(category: string, type: 'income' | 'expense' | 'transfer'): boolean {
+  if (type === 'transfer') return category === 'Überweisung';
+  if (type === 'income') return INCOME_SET.has(category);
+  return EXPENSE_SET.has(category);
+}
+
+/** Prüfung gegen die gesamte kanonische Liste (z. B. Budgets, wiederkehrende Regeln). */
+export function isCanonicalCategory(category: string): boolean {
+  return ALL_SET.has(category);
+}
