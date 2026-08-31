@@ -1,8 +1,8 @@
 import type { Context } from 'hono';
 import type { Env } from '../types';
 
-/** Zwei Grenz-Ebenen, konfiguriert in wrangler.toml ([[ratelimits]]). */
-export type RateLimitPolicy = 'standard' | 'strict';
+/** Drei Grenz-Ebenen, konfiguriert in wrangler.toml ([[ratelimits]]). */
+export type RateLimitPolicy = 'standard' | 'strict' | 'magic';
 
 /**
  * Cloudflare-Rate-Limiting über die nativen Bindings: Überschreitung →
@@ -15,7 +15,12 @@ export async function enforceRateLimit(
   policy: RateLimitPolicy,
   key: string,
 ): Promise<Response | null> {
-  const binding = policy === 'strict' ? c.env.RATE_LIMITER_STRICT : c.env.RATE_LIMITER;
+  const binding =
+    policy === 'strict'
+      ? c.env.RATE_LIMITER_STRICT
+      : policy === 'magic'
+        ? c.env.RATE_LIMITER_MAGIC
+        : c.env.RATE_LIMITER;
   if (!binding) return null;
   try {
     const result = await binding.limit({ key });

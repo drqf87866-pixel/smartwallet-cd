@@ -425,6 +425,26 @@ async function loadSummaryData(
 const LIST_PAGE_SIZE = 50;
 
 /**
+ * Zeigt den Monatsbeitrag (Privat → Gemeinschaftskonto) als zwei Zeilen an, ohne den
+ * zugrunde liegenden `transfer`-Datensatz zu verändern: eine Privat-Zeile (Abgang, wird
+ * in dashboard.tsx wie eine Ausgabe eingefärbt) und eine Gemeinschaft-Zeile (Zugang, wie
+ * eine Einnahme). Betrifft nur die Anzeige – Bilanzen/Statistik werden separat per SQL
+ * berechnet und bleiben unangetastet.
+ */
+function splitContributions(rows: DashboardTx[]): DashboardTx[] {
+  const out: DashboardTx[] = [];
+  for (const t of rows) {
+    if (t.type === 'transfer' && t.category === 'Beitrag') {
+      out.push({ ...t, scope: 'personal' });
+      out.push({ ...t, scope: 'shared' });
+    } else {
+      out.push(t);
+    }
+  }
+  return out;
+}
+
+/**
  * Daten für die Transaktionsliste inkl. Monats-Kontext (List-Fragment).
  * Mit `before`-Cursor werden die nächsten LIST_PAGE_SIZE Buchungen ab dem
  * ältesten bereits gerenderten Eintrag geliefert. Der älteste geladene Tag
@@ -500,7 +520,7 @@ async function loadListData(
     monthLabel: monthLabelFor(month),
     prevMonth: shiftMonth(month, -1),
     nextMonth: shiftMonth(month, 1),
-    transactions,
+    transactions: splitContributions(transactions),
     today: new Date().toISOString().slice(0, 10),
     hasMore,
   };

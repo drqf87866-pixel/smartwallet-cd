@@ -2,10 +2,12 @@ export type Env = {
   Bindings: {
     /** D1-Bindung aus wrangler.toml */
     DB: D1Database;
-    /** Rate-Limiting standard (10/Minute je Key) – Grenzen in wrangler.toml */
+    /** Rate-Limiting standard (10/Minute je Key) – Login, Grenzen in wrangler.toml */
     RATE_LIMITER: RateLimit;
     /** Rate-Limiting strict (5/Minute je Key) – Registrierung & Passwort-Reset */
     RATE_LIMITER_STRICT: RateLimit;
+    /** Rate-Limiting magic (15/Minute GLOBAL, ein Zähler für alle Nutzer) – Gemini-Kosten-Schutz */
+    RATE_LIMITER_MAGIC: RateLimit;
     /** Secret – Gemini API Key (https://aistudio.google.com/apikey) */
     GEMINI_API_KEY: string;
     /** Secret – HS256-Signaturschlüssel für die JWTs */

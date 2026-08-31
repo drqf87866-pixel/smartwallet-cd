@@ -10,8 +10,9 @@ const magic = new Hono<Env>();
 magic.use('/api/magic-entry', requireAuth);
 
 magic.post('/api/magic-entry', async (c) => {
-  // Kosten-Schutz: jeder Gemini-Aufruf kostet – max. 10 pro Minute und Nutzer
-  const limited = await enforceRateLimit(c, 'standard', `magic:${c.get('userId')}`);
+  // Kosten-Schutz: jeder Gemini-Aufruf kostet – max. 15 pro Minute GLOBAL für
+  // alle Nutzer zusammen (fester Key, kein Per-User-Zähler).
+  const limited = await enforceRateLimit(c, 'magic', 'magic:global');
   if (limited) return limited;
 
   const body = await c.req.json<{ text?: unknown; paid_from?: unknown }>().catch(() => null);

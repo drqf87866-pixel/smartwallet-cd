@@ -69,10 +69,11 @@ const BADGE_STYLES = {
 } as const;
 
 function accountBadge(t: DashboardTx): { label: string; style: string } {
-  if (t.type === 'transfer') {
-    return t.category === 'Beitrag'
-      ? { label: 'Beitrag', style: BADGE_STYLES.transfer }
-      : { label: 'Überweisung', style: BADGE_STYLES.transfer };
+  // Beiträge (Privat → Gemeinschaftskonto) werden in loadListData() für die Anzeige in
+  // eine Privat- und eine Gemeinschaft-Zeile aufgespalten – die fallen hier bewusst NICHT
+  // in den Transfer-Zweig, sondern durch auf die normale scope-/paid_from-Logik darunter.
+  if (t.type === 'transfer' && t.category !== 'Beitrag') {
+    return { label: 'Überweisung', style: BADGE_STYLES.transfer };
   }
   if (t.type === 'settlement') return { label: 'Ausgleich', style: BADGE_STYLES.settlement };
   if (t.scope === 'personal') return { label: 'Privat', style: BADGE_STYLES.personal };
@@ -93,10 +94,17 @@ const ICON_PATHS = {
   trash: 'M3 6h18M8 6V4h8v2m1 0v14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V6',
 } as const;
 
-const amountColor = (t: DashboardTx) =>
-  t.type === 'income' ? 'text-emerald-700' : t.type === 'expense' ? 'text-red-600' : 'text-slate-500';
-const amountSign = (t: DashboardTx) =>
-  t.type === 'income' ? '+' : t.type === 'expense' ? '−' : '↗ ';
+/** Beitrag-Klon aus loadListData(): scope 'personal' = Abgang vom Privatkonto (wie Ausgabe), 'shared' = Zugang aufs Gemeinschaftskonto (wie Einnahme). */
+const isContributionSplit = (t: DashboardTx) => t.type === 'transfer' && t.category === 'Beitrag';
+
+const amountColor = (t: DashboardTx) => {
+  if (isContributionSplit(t)) return t.scope === 'personal' ? 'text-red-600' : 'text-emerald-700';
+  return t.type === 'income' ? 'text-emerald-700' : t.type === 'expense' ? 'text-red-600' : 'text-slate-500';
+};
+const amountSign = (t: DashboardTx) => {
+  if (isContributionSplit(t)) return t.scope === 'personal' ? '−' : '+';
+  return t.type === 'income' ? '+' : t.type === 'expense' ? '−' : '↗ ';
+};
 const isEditable = (t: DashboardTx) => t.type !== 'settlement' && t.category !== 'Beitrag';
 /** Nur normale Ausgaben/Einnahmen, die noch keiner Regel angehören, lassen sich wiederkehrend einrichten. */
 const canMakeRecurring = (t: DashboardTx) => isEditable(t) && !t.recurring_id && t.type !== 'transfer';
@@ -164,14 +172,14 @@ export const SummaryCards: FC<SummaryCardsProps> = ({
             <p class="text-sm font-medium text-slate-500">Gemeinsame Ausgaben · {monthLabel}</p>
             <p class="mt-1 font-serif text-4xl font-semibold tabular-nums tracking-tight text-slate-800">{fmt(sharedMonth.total)}</p>
             <div class="mt-4 grid grid-cols-2 gap-3">
-              <div class="rounded-xl bg-emerald-50 px-3 py-2.5">
-                <p class="text-[11px] text-emerald-700/80">Privat-Saldo</p>
+              <div class="rounded-xl bg-slate-50 px-3 py-2.5">
+                <p class="text-[11px] text-slate-500">Privat-Saldo</p>
                 <p class={'font-serif text-lg font-semibold tabular-nums ' + (privateBalance >= 0 ? 'text-emerald-700' : 'text-red-600')}>
                   {fmt(privateBalance)}
                 </p>
               </div>
-              <div class="rounded-xl bg-indigo-50 px-3 py-2.5">
-                <p class="text-[11px] text-indigo-700/80">Gemeinschaftskonto</p>
+              <div class="rounded-xl bg-slate-50 px-3 py-2.5">
+                <p class="text-[11px] text-slate-500">Gemeinschaftskonto</p>
                 <p class={'font-serif text-lg font-semibold tabular-nums ' + (jointPot.saldo >= 0 ? 'text-emerald-700' : 'text-red-600')}>
                   {fmt(jointPot.saldo)}
                 </p>

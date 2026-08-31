@@ -32,10 +32,12 @@ database_id = "73985035-135f-4017-9c5b-48da9731ebf4"
 GEMINI_MODEL = "gemini-3.5-flash-lite"
 
 # Natives Cloudflare-Rate-Limiting (Wrangler >= 4.36, Grenzen hier fix konfiguriert).
-# standard: Login & Magic-Input (10/Minute je Key), strict: Registrierung &
-# Passwort-Reset (5/Minute je Key). Der Helper in src/lib/ratelimit.ts failt
-# offen, falls ein Binding nicht erreichbar ist. namespace_id muss pro Binding
-# eindeutig im Account sein (zählende Keys sind: login:<ip>, magic:<uid>, …).
+# standard: Login (10/Minute je Key), strict: Registrierung & Passwort-Reset
+# (5/Minute je Key), magic: Gemini-Magic-Input – EIN gemeinsamer Zähler für
+# ALLE Nutzer zusammen (15/Minute global, Kosten-Schutz für den Gemini-Key).
+# Der Helper in src/lib/ratelimit.ts failt offen, falls ein Binding nicht
+# erreichbar ist. namespace_id muss pro Binding eindeutig im Account sein
+# (zählende Keys sind: login:<ip>, magic:global, register:<ip>, …).
 [[ratelimits]]
 name = "RATE_LIMITER"
 namespace_id = "1001"
@@ -45,4 +47,9 @@ simple = { limit = 10, period = 60 }
 name = "RATE_LIMITER_STRICT"
 namespace_id = "1002"
 simple = { limit = 5, period = 60 }
+
+[[ratelimits]]
+name = "RATE_LIMITER_MAGIC"
+namespace_id = "1003"
+simple = { limit = 15, period = 60 }
 
