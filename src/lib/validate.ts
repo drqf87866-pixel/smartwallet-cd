@@ -1,5 +1,5 @@
 import type { TransactionAccount, TransactionScope, TransactionType } from '../types';
-import { isAllowedCategory } from './categories';
+import { DEFAULT_EXPENSE_CATEGORY, INCOME_CATEGORY, isAllowedCategory } from './categories';
 
 export type TransactionInput = {
   amount: number;
@@ -70,12 +70,28 @@ export function validateTransactionInput(
     date = parsed.toISOString();
   }
 
+  if (body.type === 'income') {
+    const description =
+      typeof body.description === 'string' ? body.description.trim().slice(0, 200) : '';
+    return {
+      input: {
+        amount: Math.round(amount * 100) / 100,
+        type: body.type,
+        scope: body.scope,
+        paid_from,
+        date,
+        category: INCOME_CATEGORY,
+        description,
+      },
+    };
+  }
+
   const category =
     typeof body.category === 'string' && body.category.trim() !== ''
       ? body.category.trim().slice(0, 50)
       : body.type === 'transfer'
         ? 'Überweisung'
-        : 'Sonstiges';
+        : DEFAULT_EXPENSE_CATEGORY;
   // "Beitrag" ist der automatischen Beitragsbuchung (/api/contribution)
   // vorbehalten – sonst wäre der Schutz für Beitragseinträge umgehbar
   if (category === 'Beitrag') {

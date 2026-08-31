@@ -103,7 +103,7 @@ describe('Transaktionen', () => {
     const res = await SELF.fetch(`${BASE}/api/transactions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Cookie: annaCookie },
-      body: JSON.stringify({ amount: 42.5, type: 'expense', scope: 'shared', paid_from: 'joint', category: 'Lebensmittel', description: 'Wocheneinkauf' }),
+      body: JSON.stringify({ amount: 42.5, type: 'expense', scope: 'shared', paid_from: 'joint', category: 'Essen & Trinken', description: 'Wocheneinkauf' }),
     });
     expect(res.status).toBe(201);
     const { transaction } = await json<{ transaction: { created_by: string } }>(res);
@@ -215,7 +215,7 @@ describe('Haushalts-Scoping', () => {
     const res = await SELF.fetch(`${BASE}/api/transactions/${annaTxId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', Cookie: caroCookie },
-      body: JSON.stringify({ amount: 1, type: 'expense', scope: 'shared', category: 'Café' }),
+      body: JSON.stringify({ amount: 1, type: 'expense', scope: 'shared', category: 'Essen & Trinken' }),
     });
     expect(res.status).toBe(404);
   });

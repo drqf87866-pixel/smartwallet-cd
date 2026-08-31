@@ -1,30 +1,29 @@
 import { describe, expect, it } from 'vitest';
-import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, isAllowedCategory, isCanonicalCategory } from '../../src/lib/categories';
+import { EXPENSE_CATEGORIES, INCOME_CATEGORY, isAllowedCategory, isCanonicalCategory } from '../../src/lib/categories';
 import { generateInviteCode, normalizeInviteCode } from '../../src/lib/invite';
 import { hashPassword, verifyPassword } from '../../src/lib/password';
 
 describe('categories', () => {
   it('Ausgaben-Kategorien gelten nur für Ausgaben', () => {
-    expect(isAllowedCategory('Lebensmittel', 'expense')).toBe(true);
-    expect(isAllowedCategory('Lebensmittel', 'income')).toBe(false);
-    expect(isAllowedCategory('Gehalt', 'income')).toBe(true);
-    expect(isAllowedCategory('Gehalt', 'expense')).toBe(false);
+    expect(isAllowedCategory('Essen & Trinken', 'expense')).toBe(true);
+    expect(isAllowedCategory('Essen & Trinken', 'income')).toBe(false);
+    expect(isAllowedCategory(INCOME_CATEGORY, 'income')).toBe(true);
+    expect(isAllowedCategory(INCOME_CATEGORY, 'expense')).toBe(false);
   });
 
   it('Überweisungen erfordern die Kategorie "Überweisung"', () => {
     expect(isAllowedCategory('Überweisung', 'transfer')).toBe(true);
-    expect(isAllowedCategory('Miete', 'transfer')).toBe(false);
+    expect(isAllowedCategory('Wohnen', 'transfer')).toBe(false);
   });
 
   it('isCanonicalCategory akzeptiert jede kanonische Kategorie', () => {
-    expect(isCanonicalCategory('Tanken')).toBe(true);
-    expect(isCanonicalCategory('Erstattung')).toBe(true);
+    expect(isCanonicalCategory('Mobilität')).toBe(true);
+    expect(isCanonicalCategory(INCOME_CATEGORY)).toBe(true);
     expect(isCanonicalCategory('Egal')).toBe(false);
   });
 
-  it('Kategorien-Listen überschneiden sich nur bei "Sonstiges"', () => {
-    const overlap = EXPENSE_CATEGORIES.filter((c) => (INCOME_CATEGORIES as readonly string[]).includes(c));
-    expect(overlap).toEqual(['Sonstiges']);
+  it('Ausgaben-Liste hat genau 5 Kategorien', () => {
+    expect(EXPENSE_CATEGORIES).toHaveLength(5);
   });
 });
 

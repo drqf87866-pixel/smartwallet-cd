@@ -8,7 +8,7 @@ function rule(overrides: Partial<RecurringRule>): RecurringRule {
     user_id: 1,
     amount: 10,
     type: 'expense',
-    category: 'Sonstiges',
+    category: 'Freizeit & Sonstiges',
     description: '',
     scope: 'shared',
     paid_from: 'joint',
@@ -123,7 +123,7 @@ describe('validateRecurringInput', () => {
       amount: 900,
       type: 'expense',
       scope: 'shared',
-      category: 'Miete',
+      category: 'Wohnen',
       frequency: 'monthly',
       start_date: '2026-09-01',
     });
@@ -133,7 +133,7 @@ describe('validateRecurringInput', () => {
       amount: 90,
       type: 'expense',
       scope: 'shared',
-      category: 'Versicherung',
+      category: 'Freizeit & Sonstiges',
       frequency: 'yearly',
       start_date: '2026-12-24',
     });
@@ -150,13 +150,13 @@ describe('validateRecurringInput', () => {
       start_date: '2026-09-01',
       paid_from: 'joint',
     });
-    expect(income).toMatchObject({ input: { paid_from: 'private' } });
+    expect(income).toMatchObject({ input: { paid_from: 'private', category: 'Einnahme' } });
 
     const personal = validateRecurringInput({
       amount: 30,
       type: 'expense',
       scope: 'personal',
-      category: 'Sport',
+      category: 'Gesundheit & Körper',
       frequency: 'monthly',
       start_date: '2026-09-01',
     });

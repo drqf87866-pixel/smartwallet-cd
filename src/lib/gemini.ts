@@ -1,4 +1,4 @@
-import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, ALL_CATEGORIES } from './categories';
+import { EXPENSE_CATEGORIES, INCOME_CATEGORY, ALL_CATEGORIES } from './categories';
 
 const DEFAULT_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODEL = 'gemini-3.5-flash-lite';
@@ -12,7 +12,7 @@ Regeln pro Feld:
 - "type": "expense" bei Ausgaben (einkaufen, tanken, essen gehen, Miete, Kino ...), "income" bei Einnahmen (Gehalt, Erstattung, Geld erhalten, etwas verkauft ...), "transfer" bei Überweisungen/Einlagen vom eigenen Privatkonto aufs Gemeinschaftskonto (z. B. "Ich überweise 200 Euro aufs Gemeinschaftskonto", "Zahle 100 € ins gemeinsame Konto ein"). Achtung: Eine Ausgabe, die MIT der Gemeinschaftskarte bezahlt wurde, bleibt "expense" – nur tatsächliche Überweisungen Geldes aufs GK sind "transfer".
 - "scope": "shared", wenn die Aktivität GEMEINSAM war – Hinweiswörter sind "wir", "zusammen", "gemeinsam", "uns", "unsere", "für uns beide" (z. B. "Wir waren für 60 Euro essen"). Sonst "personal" (z. B. "Ich war für 45 Euro tanken"). Bei "transfer" immer "shared".
 - "paid_from": Konto, mit dem bezahlt wurde. "joint" bei "Gemeinschaftskonto", "Gemeinschaftskarte", "gemeinsames Konto". "private" bei "meine Karte", "privat bezahlt", "bar". Wenn nicht erkennbar: bei gemeinsamen Ausgaben "joint" (die meisten laufen übers Gemeinskonto), bei persönlichen "private". Bei "transfer" immer "joint" (das Geld landet auf dem Gemeinskonto).
-- "category": GENAU EINE Kategorie aus der Enum-Liste des Schemas – passe sie passend zum type an. Für Ausgaben ("expense") sind das: ${EXPENSE_CATEGORIES.join(', ')}. Für Einnahmen ("income"): ${INCOME_CATEGORIES.join(', ')}. Bei "transfer" immer "Überweisung". Wähle immer die passendste Kategorie, nur wenn wirklich nichts passt: "Sonstiges".
+- "category": GENAU EINE Kategorie aus der Enum-Liste des Schemas – passe sie passend zum type an. Für Ausgaben ("expense") sind das: ${EXPENSE_CATEGORIES.join(', ')}. Für Einnahmen ("income") immer "${INCOME_CATEGORY}". Bei "transfer" immer "Überweisung". Wähle immer die passendste Kategorie, nur wenn wirklich nichts passt: "Freizeit & Sonstiges".
 - "description": kurze, klare Zusammenfassung dessen, was ausgegeben/wie eingenommen wurde (max. 60 Zeichen, ohne Betrag).
 - "date": Datum der Transaktion als ISO-8601-String (z. B. "2026-08-29T18:30:00Z"), wenn die Eingabe ein Datum nennt ("gestern", "am 3. August", "vorgestern" entsprechend auflösen). Sonst null.`;
 

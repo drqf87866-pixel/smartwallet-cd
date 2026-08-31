@@ -300,9 +300,11 @@ const TxRow: FC<{ t: DashboardTx }> = ({ t }) => {
       </td>
       <td class="py-2.5 pr-3">
         <span class="font-medium text-slate-700">{t.description || t.category}</span>
-        <span class="ml-2 whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
-          {t.category}
-        </span>
+        {t.type !== 'income' ? (
+          <span class="ml-2 whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
+            {t.category}
+          </span>
+        ) : null}
         {t.recurring_id ? (
           <span
             class="ml-1 whitespace-nowrap rounded-full bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-600"
@@ -426,7 +428,7 @@ const TxCard: FC<{ t: DashboardTx }> = ({ t }) => {
         <p class="truncate font-medium text-slate-800">{t.description || t.category}</p>
         <p class="mt-0.5 flex items-center gap-1.5 text-xs text-slate-500">
           <span class={'rounded-full px-2 py-0.5 font-medium ' + badge.style}>{badge.label}</span>
-          <span class="truncate">{t.category}</span>
+          {t.type !== 'income' ? <span class="truncate">{t.category}</span> : null}
           {t.recurring_id ? (
             <span class="rounded-full bg-violet-50 px-2 py-0.5 font-medium text-violet-600" title="Wiederkehrende Zahlung">
               🔁
@@ -556,7 +558,7 @@ export const TxList: FC<TxListProps & { layout?: 'mobile' | 'desktop' }> = ({
                 <option value="private">Privatkonto</option>
               </select>
             </label>
-            <label class="block">
+            <label id="m-category-field" class="block">
               <span class={LABEL_CLASS}>Kategorie</span>
               <CategorySelect id="m-category" />
             </label>
@@ -915,7 +917,7 @@ document.addEventListener('submit', async function (e) {
       type: $('m-type').value,
       scope: $('m-scope').value,
       paid_from: $('m-paid-from').value,
-      category: $('m-category').value,
+      category: $('m-type').value === 'income' ? (window.__INCOME_CATEGORY || 'Einnahme') : $('m-category').value,
       description: $('m-description').value,
     };
     var date = $('m-date').value;
@@ -990,7 +992,7 @@ document.addEventListener('submit', async function (e) {
       type: $('e-type').value,
       scope: $('e-scope').value,
       paid_from: $('e-paid-from').value,
-      category: $('e-category').value,
+      category: $('e-type').value === 'income' ? (window.__INCOME_CATEGORY || 'Einnahme') : $('e-category').value,
       description: $('e-description').value,
     };
     var date = $('e-date').value;
@@ -1235,7 +1237,7 @@ export const DashboardView: FC<DashboardProps> = ({
                   <option value="private">Privatkonto</option>
                 </select>
               </label>
-              <label class="block">
+              <label id="e-category-field" class="block">
                 <span class={LABEL_CLASS}>Kategorie</span>
                 <CategorySelect id="e-category" />
               </label>

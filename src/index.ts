@@ -119,18 +119,18 @@ app.post('/api/dev/seed', async (c) => {
   // Pizza/Essen/Drogerie privat vorgestreckt → Ben schuldet Anna (60−80)/2 …
   // genauer: Anna 60 € Vorschuss, Ben 80 € Vorschuss → Anna schuldet Ben 10 €
   const demoTransactions = [
-    { userId: annaId, amount: 2500, type: 'income', category: 'Gehalt', description: 'Monatsgehalt Anna', date: iso(1, 8), scope: 'personal', paidFrom: 'private' },
-    { userId: benId, amount: 2200, type: 'income', category: 'Gehalt', description: 'Monatsgehalt Ben', date: iso(1, 8), scope: 'personal', paidFrom: 'private' },
+    { userId: annaId, amount: 2500, type: 'income', category: 'Einnahme', description: 'Monatsgehalt Anna', date: iso(1, 8), scope: 'personal', paidFrom: 'private' },
+    { userId: benId, amount: 2200, type: 'income', category: 'Einnahme', description: 'Monatsgehalt Ben', date: iso(1, 8), scope: 'personal', paidFrom: 'private' },
     { userId: annaId, amount: 700, type: 'transfer', category: 'Beitrag', description: 'Monatsbeitrag Gemeinschaftskonto', date: iso(1, 9), scope: 'shared', paidFrom: 'joint' },
     { userId: benId, amount: 700, type: 'transfer', category: 'Beitrag', description: 'Monatsbeitrag Gemeinschaftskonto', date: iso(1, 9), scope: 'shared', paidFrom: 'joint' },
-    { userId: annaId, amount: 900, type: 'expense', category: 'Miete', description: 'Miete', date: iso(3, 9), scope: 'shared', paidFrom: 'joint' },
-    { userId: benId, amount: 80, type: 'expense', category: 'Strom', description: 'Stromabschlag', date: iso(5, 9), scope: 'shared', paidFrom: 'joint' },
-    { userId: annaId, amount: 100, type: 'expense', category: 'Lebensmittel', description: 'Wocheneinkauf', date: iso(6, 18), scope: 'shared', paidFrom: 'joint' },
-    { userId: benId, amount: 50, type: 'expense', category: 'Restaurant', description: 'Pizzaabend', date: iso(8, 20), scope: 'shared', paidFrom: 'private' },
-    { userId: annaId, amount: 45, type: 'expense', category: 'Tanken', description: 'Auto betankt', date: iso(12, 9), scope: 'personal', paidFrom: 'private' },
-    { userId: annaId, amount: 60, type: 'expense', category: 'Restaurant', description: 'Essen zu zweit', date: iso(15, 19), scope: 'shared', paidFrom: 'private' },
-    { userId: benId, amount: 30, type: 'expense', category: 'Haushalt', description: 'Drogerie-Einkauf', date: iso(18, 17), scope: 'shared', paidFrom: 'private' },
-    { userId: annaId, amount: 15, type: 'expense', category: 'Streaming', description: 'Musik-Abo', date: iso(21, 10), scope: 'personal', paidFrom: 'private' },
+    { userId: annaId, amount: 900, type: 'expense', category: 'Wohnen', description: 'Miete', date: iso(3, 9), scope: 'shared', paidFrom: 'joint' },
+    { userId: benId, amount: 80, type: 'expense', category: 'Wohnen', description: 'Stromabschlag', date: iso(5, 9), scope: 'shared', paidFrom: 'joint' },
+    { userId: annaId, amount: 100, type: 'expense', category: 'Essen & Trinken', description: 'Wocheneinkauf', date: iso(6, 18), scope: 'shared', paidFrom: 'joint' },
+    { userId: benId, amount: 50, type: 'expense', category: 'Essen & Trinken', description: 'Pizzaabend', date: iso(8, 20), scope: 'shared', paidFrom: 'private' },
+    { userId: annaId, amount: 45, type: 'expense', category: 'Mobilität', description: 'Auto betankt', date: iso(12, 9), scope: 'personal', paidFrom: 'private' },
+    { userId: annaId, amount: 60, type: 'expense', category: 'Essen & Trinken', description: 'Essen zu zweit', date: iso(15, 19), scope: 'shared', paidFrom: 'private' },
+    { userId: benId, amount: 30, type: 'expense', category: 'Gesundheit & Körper', description: 'Drogerie-Einkauf', date: iso(18, 17), scope: 'shared', paidFrom: 'private' },
+    { userId: annaId, amount: 15, type: 'expense', category: 'Freizeit & Sonstiges', description: 'Musik-Abo', date: iso(21, 10), scope: 'personal', paidFrom: 'private' },
   ] as const;
 
   const insert = c.env.DB.prepare(

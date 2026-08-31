@@ -1,20 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import { validateTransactionInput } from '../../src/lib/validate';
+import { INCOME_CATEGORY } from '../../src/lib/categories';
 
 const base = { amount: 10, type: 'expense', scope: 'shared' };
 
 describe('validateTransactionInput', () => {
   it('akzeptiert eine gültige gemeinsame Ausgabe', () => {
-    const result = validateTransactionInput({ ...base, category: 'Lebensmittel', paid_from: 'joint' });
+    const result = validateTransactionInput({ ...base, category: 'Essen & Trinken', paid_from: 'joint' });
     expect(result).toMatchObject({
-      input: { amount: 10, type: 'expense', scope: 'shared', paid_from: 'joint', category: 'Lebensmittel' },
+      input: { amount: 10, type: 'expense', scope: 'shared', paid_from: 'joint', category: 'Essen & Trinken' },
     });
   });
 
   it('parsert deutsche Komma-Beträge und rundet auf Cent', () => {
-    const result = validateTransactionInput({ ...base, amount: '12,9', category: 'Café' });
+    const result = validateTransactionInput({ ...base, amount: '12,9', category: 'Mobilität' });
     expect(result).toMatchObject({ input: { amount: 12.9 } });
-    const rounded = validateTransactionInput({ ...base, amount: 10.005, category: 'Café' });
+    const rounded = validateTransactionInput({ ...base, amount: 10.005, category: 'Mobilität' });
     if ('input' in rounded) expect(rounded.input.amount).toBe(10.01);
   });
 
@@ -25,15 +26,15 @@ describe('validateTransactionInput', () => {
   });
 
   it('persönliche Posten und Einnahmen laufen immer übers Privatkonto', () => {
-    const personal = validateTransactionInput({ ...base, scope: 'personal', category: 'Sport', paid_from: 'joint' });
+    const personal = validateTransactionInput({ ...base, scope: 'personal', category: 'Gesundheit & Körper', paid_from: 'joint' });
     expect(personal).toMatchObject({ input: { paid_from: 'private' } });
     const income = validateTransactionInput({ amount: 100, type: 'income', scope: 'shared', category: 'Gehalt', paid_from: 'joint' });
-    expect(income).toMatchObject({ input: { paid_from: 'private' } });
+    expect(income).toMatchObject({ input: { paid_from: 'private', category: INCOME_CATEGORY } });
   });
 
   it('Überweisungen: falsche Kategorie wird abgelehnt, fehlende erzwungen, Ziel GK', () => {
     expect(
-      validateTransactionInput({ amount: 700, type: 'transfer', scope: 'personal', category: 'Sonstiges' }),
+      validateTransactionInput({ amount: 700, type: 'transfer', scope: 'personal', category: 'Freizeit & Sonstiges' }),
     ).toHaveProperty('error');
 
     const result = validateTransactionInput({ amount: 700, type: 'transfer', scope: 'personal', category: 'Überweisung' });
@@ -51,14 +52,17 @@ describe('validateTransactionInput', () => {
   });
 
   it('fehlende Kategorie bekommt einen Fallback je nach Art', () => {
-    expect(validateTransactionInput(base)).toMatchObject({ input: { category: 'Sonstiges' } });
+    expect(validateTransactionInput(base)).toMatchObject({ input: { category: 'Freizeit & Sonstiges' } });
     expect(
       validateTransactionInput({ amount: 1, type: 'transfer', scope: 'shared' }),
     ).toMatchObject({ input: { category: 'Überweisung' } });
+    expect(
+      validateTransactionInput({ amount: 100, type: 'income', scope: 'shared' }),
+    ).toMatchObject({ input: { category: INCOME_CATEGORY } });
   });
 
   it('normalisiert explizite Daten nach ISO-8601 und nutzt sonst die aktuelle Zeit', () => {
-    const explicit = validateTransactionInput({ ...base, category: 'Café', date: '2026-08-15T19:00:00.000Z' });
+    const explicit = validateTransactionInput({ ...base, category: 'Mobilität', date: '2026-08-15T19:00:00.000Z' });
     expect(explicit).toMatchObject({ input: { date: '2026-08-15T19:00:00.000Z' } });
 
     const fallback = validateTransactionInput(base);

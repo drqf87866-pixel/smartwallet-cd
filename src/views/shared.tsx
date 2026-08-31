@@ -1,5 +1,5 @@
 import type { FC } from 'hono/jsx';
-import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from '../lib/categories';
+import { EXPENSE_CATEGORIES, INCOME_CATEGORY } from '../lib/categories';
 
 /** Geteilte Klassen-Konstanten (Implementierung in src/styles/app.css, @layer components). */
 export const INPUT_CLASS = 'input';
@@ -21,7 +21,7 @@ export const CategorySelect: FC<{ id: string }> = ({ id }) => (
 export const CategoryGlobals: FC = () => (
   <script
     dangerouslySetInnerHTML={{
-      __html: `window.__EXPENSE_CATS=${JSON.stringify(EXPENSE_CATEGORIES)};window.__INCOME_CATS=${JSON.stringify(INCOME_CATEGORIES)};`,
+      __html: `window.__EXPENSE_CATS=${JSON.stringify(EXPENSE_CATEGORIES)};window.__INCOME_CATEGORY=${JSON.stringify(INCOME_CATEGORY)};`,
     }}
   />
 );

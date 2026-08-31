@@ -355,24 +355,31 @@
   /* Kategorie-Dropdowns je nach Art (Ausgabe/Einnahme/Überweisung)       */
   /* ------------------------------------------------------------------ */
 
+  window.toggleCategoryField = function (prefix) {
+    var typeSel = $(prefix + 'type');
+    var field = $(prefix + 'category-field');
+    if (!typeSel || !field) return;
+    var isExpense = typeSel.value === 'expense';
+    field.classList.toggle('hidden', !isExpense);
+  };
+
   window.syncCategoryOptions = function (prefix, keepValue) {
     var typeSel = $(prefix + 'type');
     var catSel = $(prefix + 'category');
     if (!typeSel || !catSel) return;
+    toggleCategoryField(prefix);
     var desired = (keepValue === undefined ? catSel.value : keepValue) || '';
     var isTransfer = typeSel.value === 'transfer';
     var isIncome = typeSel.value === 'income';
     if (isTransfer) desired = 'Überweisung';
+    if (isIncome) desired = window.__INCOME_CATEGORY || 'Einnahme';
     var cats = isIncome || isTransfer
-      ? (window.__INCOME_CATS || [])
+      ? [window.__INCOME_CATEGORY || 'Einnahme']
       : (window.__EXPENSE_CATS || []);
-    if (!cats.length) {
-      cats = JSON.parse(catSel.getAttribute(isIncome || isTransfer ? 'data-income-cats' : 'data-expense-cats') || '[]');
-    }
     if (isTransfer) cats = ['Überweisung'];
-    catSel.disabled = isTransfer;
+    catSel.disabled = isTransfer || isIncome;
     catSel.innerHTML = '';
-    if (desired && cats.indexOf(desired) === -1) {
+    if (desired && cats.indexOf(desired) === -1 && !isIncome) {
       // Alt-Kategorie (nicht mehr kanonisch): sichtbar, aber gesperrt –
       // beim Speichern erzwingt der Server eine Auswahl aus der Liste.
       var extra = document.createElement('option');
@@ -390,7 +397,7 @@
     if (desired) {
       catSel.value = desired;
     } else {
-      var fallback = cats.indexOf('Sonstiges') !== -1 ? 'Sonstiges' : cats[0] || '';
+      var fallback = cats.indexOf('Freizeit & Sonstiges') !== -1 ? 'Freizeit & Sonstiges' : cats[0] || '';
       if (fallback) catSel.value = fallback;
     }
   };

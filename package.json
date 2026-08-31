@@ -10,6 +10,8 @@
     "build:css": "tailwindcss -i ./src/styles/app.css -o ./public/assets/app.css --minify",
     "db:init": "wrangler d1 execute smartwallet-cd-db --local --file=./schema.sql",
     "db:init:remote": "wrangler d1 execute smartwallet-cd-db --remote --file=./schema.sql",
+    "db:migrate:local": "wrangler d1 execute smartwallet-cd-db --local --file=./scripts/d1-baseline-migrations.sql && wrangler d1 migrations apply smartwallet-cd-db --local",
+    "db:migrate:remote": "wrangler d1 execute smartwallet-cd-db --remote --file=./scripts/d1-baseline-migrations.sql && wrangler d1 migrations apply smartwallet-cd-db --remote",
     "db:reset": "wrangler d1 execute smartwallet-cd-db --local --file=./scripts/reset.sql && npm run db:init",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"

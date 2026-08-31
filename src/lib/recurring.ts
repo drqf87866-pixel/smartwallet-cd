@@ -1,5 +1,5 @@
 import type { TransactionAccount, TransactionScope } from '../types';
-import { isAllowedCategory } from './categories';
+import { DEFAULT_EXPENSE_CATEGORY, INCOME_CATEGORY, isAllowedCategory } from './categories';
 
 export type RecurringFrequency = 'weekly' | 'monthly' | 'yearly';
 
@@ -134,9 +134,11 @@ export function validateRecurringInput(
   }
 
   const category =
-    typeof body.category === 'string' && body.category.trim() !== ''
-      ? body.category.trim().slice(0, 50)
-      : 'Sonstiges';
+    body.type === 'income'
+      ? INCOME_CATEGORY
+      : typeof body.category === 'string' && body.category.trim() !== ''
+        ? body.category.trim().slice(0, 50)
+        : DEFAULT_EXPENSE_CATEGORY;
   if (category === 'Beitrag') {
     return { error: 'Die Kategorie "Beitrag" ist reserviert – nutze den Button „Beitrag buchen“' };
   }

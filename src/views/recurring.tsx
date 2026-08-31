@@ -60,13 +60,14 @@ export const RecurringList: FC<{ rules: RecurringRuleView[] }> = ({ rules }) => 
           <li class="flex items-center justify-between gap-3 py-3">
             <div class="min-w-0">
               <p class="truncate text-sm font-medium text-slate-700">
-                {rule.description || rule.category}
+                {rule.description || (rule.type === 'income' ? 'Einnahme' : rule.category)}
                 {rule.active ? null : (
                   <span class="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">pausiert</span>
                 )}
               </p>
               <p class="mt-0.5 text-xs text-slate-500">
-                {frequencyLabel(rule)} · {rule.category}
+                {frequencyLabel(rule)}
+                {rule.type !== 'income' ? <> · {rule.category}</> : null}
                 {rule.next_due ? <> · fällig am {fmtDate(rule.next_due)}</> : null}
               </p>
             </div>
@@ -187,7 +188,7 @@ const RecurringEditOverlay: FC = () => (
             <option value="private">Privatkonto</option>
           </select>
         </label>
-        <label class="block">
+        <label id="re-category-field" class="block">
           <span class={LABEL_CLASS}>Kategorie</span>
           <CategorySelect id="re-category" />
         </label>
@@ -428,7 +429,7 @@ document.addEventListener('submit', async function (e) {
       type: $('r-type').value,
       scope: $('r-scope').value,
       paid_from: $('r-paid-from').value,
-      category: $('r-category').value,
+      category: $('r-type').value === 'income' ? (window.__INCOME_CATEGORY || 'Einnahme') : $('r-category').value,
       description: $('r-description').value,
       frequency: $('r-frequency').value,
       start_date: $('r-due').value,
@@ -462,7 +463,7 @@ document.addEventListener('submit', async function (e) {
       type: $('re-type').value,
       scope: $('re-scope').value,
       paid_from: $('re-paid-from').value,
-      category: $('re-category').value,
+      category: $('re-type').value === 'income' ? (window.__INCOME_CATEGORY || 'Einnahme') : $('re-category').value,
       description: $('re-description').value,
       frequency: $('re-frequency').value,
       start_date: $('re-due').value,
@@ -544,7 +545,7 @@ document.addEventListener('submit', async function (e) {
                   <option value="private">Privatkonto</option>
                 </select>
               </label>
-              <label class="block">
+              <label id="r-category-field" class="block">
                 <span class={LABEL_CLASS}>Kategorie</span>
                 <CategorySelect id="r-category" />
               </label>
