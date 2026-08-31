@@ -1,7 +1,7 @@
 import type { TransactionAccount, TransactionScope } from '../types';
 import { DEFAULT_EXPENSE_CATEGORY, INCOME_CATEGORY, isAllowedCategory } from './categories';
 
-export type RecurringFrequency = 'weekly' | 'monthly' | 'yearly';
+export type RecurringFrequency = 'weekly' | 'monthly' | 'quarterly' | 'yearly';
 
 export type RecurringRule = {
   id: number;
@@ -104,8 +104,8 @@ export function validateRecurringInput(
   }
 
   const frequency = body.frequency;
-  if (frequency !== 'weekly' && frequency !== 'monthly' && frequency !== 'yearly') {
-    return { error: 'frequency muss "weekly", "monthly" oder "yearly" sein' };
+  if (frequency !== 'weekly' && frequency !== 'monthly' && frequency !== 'quarterly' && frequency !== 'yearly') {
+    return { error: 'frequency muss "weekly", "monthly", "quarterly" oder "yearly" sein' };
   }
 
   if (!isDateStr(body.start_date)) {
@@ -118,7 +118,8 @@ export function validateRecurringInput(
     ? (new Date(start_date + OCCURRENCE_TIME).getUTCDay() + 6) % 7 + 1 // Mo = 1 … So = 7
     : Number(start_date.slice(8, 10));
   let month: number | null = null;
-  if (frequency === 'yearly') {
+  if (frequency === 'yearly' || frequency === 'quarterly') {
+    // Ankermonat: bei quarterly bestimmt er, welche Monate im 3-Monats-Raster liegen
     month = Number(start_date.slice(5, 7));
   }
 
@@ -211,6 +212,20 @@ export function occurrenceDates(rule: RecurringRule, fromISO: string, toISO: str
     return dates;
   }
 
+  if (rule.frequency === 'quarterly') {
+    // Vom Ankermonat (rule.start_date) aus in 3er-Schritten – so treffen wir
+    // nur Monate start_month + 3k statt jedes 3. Kalendermonats ab `lower`.
+    let year = Number(rule.start_date.slice(0, 4));
+    let month = rule.month!;
+    while (clampedDate(year, month, rule.day) <= upper) {
+      const date = clampedDate(year, month, rule.day);
+      if (date >= lower) dates.push(date);
+      month += 3;
+      while (month > 12) { month -= 12; year += 1; }
+    }
+    return dates;
+  }
+
   // yearly
   let year = Number(lower.slice(0, 4));
   const month = rule.month!;
@@ -281,6 +296,28 @@ export function nextDueDate(rule: RecurringRule, afterISO: string, skips?: Set<s
     return null;
   }
 
+  if (rule.frequency === 'quarterly') {
+    // Vom Ankermonat aus in 3er-Schritten vorrücken, statt von afterISO –
+    // nur so treffen wir ausschließlich Monate start_month + 3k.
+    let year = Number(rule.start_date.slice(0, 4));
+    let month = rule.month!;
+    let date = clampedDate(year, month, rule.day);
+    while (date <= afterISO) {
+      month += 3;
+      while (month > 12) { month -= 12; year += 1; }
+      date = clampedDate(year, month, rule.day);
+    }
+    while (date <= horizon) {
+      const accepted = acceptDueDate(date, rule, skips);
+      if (accepted) return accepted;
+      if (rule.end_date && date > rule.end_date) return null;
+      month += 3;
+      while (month > 12) { month -= 12; year += 1; }
+      date = clampedDate(year, month, rule.day);
+    }
+    return null;
+  }
+
   // yearly
   let year = Number(afterISO.slice(0, 4));
   const month = rule.month!;
@@ -304,7 +341,19 @@ export function frequencyLabel(rule: Pick<RecurringRule, 'frequency' | 'day' | '
   if (rule.frequency === 'weekly') return `wöchentlich, ${WEEKDAY_NAMES[rule.day - 1]}`;
   if (rule.frequency === 'monthly') return `monatlich am ${rule.day}.`;
   const monthName = MONTH_NAMES[(rule.month ?? 1) - 1];
+  if (rule.frequency === 'quarterly') return `vierteljährlich am ${rule.day}. (Start: ${monthName})`;
   return `jährlich am ${rule.day}. ${monthName}`;
+}
+
+/**
+ * Monatsäquivalent in EUR für Jahres-/Quartalsregeln – hilft, große seltene
+ * Zahlungen (z. B. Kfz-Versicherung) auf den Monat runterzubrechen.
+ * `null` für weekly/monthly, da dort keine sinnvolle Umrechnung nötig/möglich ist.
+ */
+export function monthlyEquivalent(amount: number, frequency: RecurringFrequency): number | null {
+  if (frequency === 'yearly') return Math.round((amount / 12) * 100) / 100;
+  if (frequency === 'quarterly') return Math.round((amount / 3) * 100) / 100;
+  return null;
 }
 
 /** Lädt alle Skips für die gegebenen Regeln in einem Query – vermeidet N+1. */

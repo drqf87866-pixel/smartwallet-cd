@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS transactions (
   scope         TEXT    NOT NULL CHECK (scope IN ('personal', 'shared')),
   paid_from     TEXT    NOT NULL DEFAULT 'joint' CHECK (paid_from IN ('private', 'joint')),
   counterpart_id INTEGER REFERENCES users(id), -- nur type='settlement': Empfänger
-  recurring_id   INTEGER REFERENCES recurring_rules(id) -- gesetzt bei aus Regeln erzeugten Occurrences
+  recurring_id   INTEGER REFERENCES recurring_rules(id) ON DELETE SET NULL -- gesetzt bei aus Regeln erzeugten Occurrences
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_tx_recurring_occurrence
@@ -55,7 +55,9 @@ CREATE INDEX IF NOT EXISTS idx_users_household    ON users(household_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_user_date ON transactions(user_id, date);
 
 -- Wiederkehrende Zahlungen: Rhythmus weekly (day = Wochentag 1-7, Mo=1),
--- monthly (day = Tag 1-31, klemmt auf Monatsletzten), yearly (month 1-12 + day).
+-- monthly (day = Tag 1-31, klemmt auf Monatsletzten), quarterly (day = Tag,
+-- month = Startmonat 1-12 als Anker für den 3-Monats-Rhythmus),
+-- yearly (month 1-12 + day).
 -- Fällige Occurrences werden beim Dashboard-Laden (Lazy Materialization) bzw.
 -- vom täglichen Cron als normale Transaktionen erzeugt; gelöschte Occurrences
 -- landen in recurring_skips, damit sie nicht neu angelegt werden.
@@ -69,7 +71,7 @@ CREATE TABLE IF NOT EXISTS recurring_rules (
   description  TEXT    NOT NULL DEFAULT '',
   scope        TEXT    NOT NULL CHECK (scope IN ('personal', 'shared')),
   paid_from    TEXT    NOT NULL DEFAULT 'joint' CHECK (paid_from IN ('private', 'joint')),
-  frequency    TEXT    NOT NULL CHECK (frequency IN ('weekly', 'monthly', 'yearly')),
+  frequency    TEXT    NOT NULL CHECK (frequency IN ('weekly', 'monthly', 'quarterly', 'yearly')),
   day          INTEGER NOT NULL,
   month        INTEGER,
   start_date   TEXT    NOT NULL,

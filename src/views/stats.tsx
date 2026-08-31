@@ -272,7 +272,7 @@ export const StatsView: FC<StatsProps> = ({
           )}
         </section>
 
-        <MagicSheet />
+        <MagicSheet hideOnDesktop />
       </main>
 
       <BottomNav page="stats" month={month} />

@@ -9,6 +9,7 @@ export const LABEL_CLASS = 'label-text';
 export const FREQUENCY_OPTIONS = [
   { value: 'monthly', label: 'Monatlich' },
   { value: 'weekly', label: 'Wöchentlich' },
+  { value: 'quarterly', label: 'Vierteljährlich' },
   { value: 'yearly', label: 'Jährlich' },
 ] as const;
 
@@ -210,8 +211,8 @@ const NavTab: FC<{ item: (typeof NAV_ITEMS)[number]; page: BottomNavPage; month?
 /* auf Desktop normale Card im Seitenfluss                             */
 /* ------------------------------------------------------------------ */
 
-const PILL_ACTIVE = 'rounded-full px-3.5 py-2 text-sm font-medium bg-indigo-600 text-white';
-const PILL_IDLE = 'rounded-full px-3.5 py-2 text-sm font-medium bg-slate-100 text-slate-600';
+export const PILL_ACTIVE = 'rounded-full px-3.5 py-2 text-sm font-medium bg-indigo-600 text-white';
+export const PILL_IDLE = 'rounded-full px-3.5 py-2 text-sm font-medium bg-slate-100 text-slate-600';
 
 const magicSheetCss = `
 @media (max-width: 767px) {
@@ -321,11 +322,14 @@ document.addEventListener('submit', async function (e) {
  * 2. Optional „Wer hat bezahlt“ per Chips festlegen.
  * 3. Großer primärer Button unten (Thumb-Zone), nicht im Kopfbereich.
  */
-export const MagicSheet: FC = () => (
+export const MagicSheet: FC<{ hideOnDesktop?: boolean }> = ({ hideOnDesktop }) => (
   <>
     <div id="magic-backdrop" data-action="close-magic" class="fixed inset-0 z-40 hidden bg-slate-900/40 md:hidden"></div>
 
-    <section id="magic-section" class="safe-bottom card mb-4 rounded-t-2xl md:rounded-2xl">
+    <section
+      id="magic-section"
+      class={'safe-bottom card mb-4 rounded-t-2xl md:rounded-2xl' + (hideOnDesktop ? ' md:hidden' : '')}
+    >
       <div class="mx-auto mb-4 h-1.5 w-10 rounded-full bg-slate-200 md:hidden" aria-hidden="true"></div>
 
       <div class="mb-4 flex items-center justify-between gap-3">

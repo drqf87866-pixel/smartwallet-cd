@@ -178,7 +178,7 @@ export const SettingsView: FC<SettingsProps> = ({
   recurringCount,
 }) => (
   <Layout title="Einstellungen">
-    <main class="mx-auto max-w-2xl px-4 pb-28 pt-4 sm:px-8 md:pb-8">
+    <main class="mx-auto max-w-6xl px-4 pb-28 pt-4 sm:px-8 md:pb-8">
       {/* Schlanker Kontext-Kopf (Content-First) */}
       <header class="mb-4 md:hidden">
         <h1 class="font-serif text-xl font-semibold tracking-tight text-slate-900">Einstellungen</h1>
@@ -402,7 +402,7 @@ export const SettingsView: FC<SettingsProps> = ({
     </div>
 
     <BottomNav page="settings" />
-    <MagicSheet />
+    <MagicSheet hideOnDesktop />
 
     <script dangerouslySetInnerHTML={{ __html: script }} />
   </Layout>

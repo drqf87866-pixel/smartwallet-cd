@@ -2,7 +2,7 @@ import type { FC } from 'hono/jsx';
 import type { TransactionAccount, TransactionScope, TransactionType } from '../types';
 import { EXPENSE_CATEGORIES } from '../lib/categories';
 import { Layout } from './layout';
-import { BottomNav, CategoryGlobals, CategorySelect, DesktopNav, FREQUENCY_OPTIONS, INPUT_CLASS, LABEL_CLASS, MagicSheet, MonthSwitcher, UserChip } from './shared';
+import { BottomNav, CategoryGlobals, CategorySelect, DesktopNav, FREQUENCY_OPTIONS, INPUT_CLASS, LABEL_CLASS, MagicSheet, MonthSwitcher, PILL_ACTIVE, PILL_IDLE, UserChip } from './shared';
 import { fmt, fmtDay, fmtTime } from '../lib/format';
 
 export type DashboardTx = {
@@ -172,7 +172,9 @@ export const SummaryCards: FC<SummaryCardsProps> = ({
               </div>
               <div class="rounded-xl bg-indigo-50 px-3 py-2.5">
                 <p class="text-[11px] text-indigo-700/80">Gemeinschaftskonto</p>
-                <p class="font-serif text-lg font-semibold tabular-nums text-indigo-700">{fmt(jointPot.saldo)}</p>
+                <p class={'font-serif text-lg font-semibold tabular-nums ' + (jointPot.saldo >= 0 ? 'text-emerald-700' : 'text-red-600')}>
+                  {fmt(jointPot.saldo)}
+                </p>
               </div>
             </div>
           </div>
@@ -234,7 +236,7 @@ export const SummaryCards: FC<SummaryCardsProps> = ({
 
         <article class="card">
           <h2 class="text-sm font-medium text-slate-500">Gemeinschaftskonto</h2>
-          <p class={'mt-2 font-serif text-2xl font-semibold tabular-nums sm:text-3xl ' + (jointPot.saldo >= 0 ? 'text-indigo-600' : 'text-red-600')}>
+          <p class={'mt-2 font-serif text-2xl font-semibold tabular-nums sm:text-3xl ' + (jointPot.saldo >= 0 ? 'text-emerald-700' : 'text-red-600')}>
             {fmt(jointPot.saldo)}
           </p>
           <p class="mt-1 text-xs text-slate-500">
@@ -293,7 +295,7 @@ const TxRow: FC<{ t: DashboardTx }> = ({ t }) => {
   const badge = accountBadge(t);
   const editable = isEditable(t);
   return (
-    <tr class="group border-b border-slate-100 last:border-0">
+    <tr class="group border-b border-slate-100 last:border-0" data-scope={t.scope}>
       <td class="whitespace-nowrap py-2.5 pr-3 text-slate-500">
         {fmtDay(t.date)}
         <span class="block text-xs text-slate-500">{fmtTime(t.date)}</span>
@@ -391,7 +393,7 @@ function dayLabel(key: string, today: string): string {
 const TxDayGroups: FC<{ transactions: DashboardTx[]; today: string }> = ({ transactions, today }) => (
   <>
     {groupByDay(transactions).map((g) => (
-      <div key={g.key}>
+      <div key={g.key} data-day-group>
         <p class="pt-3 text-xs font-semibold uppercase tracking-wide text-slate-400">{dayLabel(g.key, today)}</p>
         <ul class="divide-y divide-slate-100">
           {g.items.map((t) => (
@@ -423,7 +425,7 @@ const TxCard: FC<{ t: DashboardTx }> = ({ t }) => {
   const badge = accountBadge(t);
   const editable = isEditable(t);
   return (
-    <li class="flex items-center gap-3 py-3">
+    <li class="flex items-center gap-3 py-3" data-scope={t.scope}>
       <div class="min-w-0 flex-1">
         <p class="truncate font-medium text-slate-800">{t.description || t.category}</p>
         <p class="mt-0.5 flex items-center gap-1.5 text-xs text-slate-500">
@@ -518,61 +520,12 @@ export const TxList: FC<TxListProps & { layout?: 'mobile' | 'desktop' }> = ({
         <h2 class="font-serif text-base font-semibold text-slate-800">Transaktionen</h2>
       </div>
 
-      <details class="mb-4 md:hidden">
-        <summary class="flex min-h-[48px] cursor-pointer select-none list-none items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-indigo-600 shadow-sm [&::-webkit-details-marker]:hidden">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" class="h-4 w-4" aria-hidden="true">
-            <path d="M12 5v14M5 12h14" />
-          </svg>
-          Eintrag manuell hinzufügen
-        </summary>
-        <form id="manual-form" class="mt-3 grid gap-3">
-          <label class="block">
-            <span class={LABEL_CLASS}>Betrag</span>
-            <input id="m-amount" type="text" inputmode="decimal" pattern="[0-9]+([.,][0-9]{1,2})?" required placeholder="z. B. 12,50" class={INPUT_CLASS} />
-          </label>
-          <label class="block">
-            <span class={LABEL_CLASS}>Beschreibung</span>
-            <input id="m-description" type="text" maxlength={200} placeholder="Beschreibung" autocomplete="off" class={INPUT_CLASS} />
-          </label>
-          <div class="grid grid-cols-2 gap-3">
-            <label class="block">
-              <span class={LABEL_CLASS}>Art</span>
-              <select id="m-type" class={INPUT_CLASS}>
-                <option value="expense" selected>Ausgabe</option>
-                <option value="income">Einnahme</option>
-              </select>
-            </label>
-            <label class="block">
-              <span class={LABEL_CLASS}>Bereich</span>
-              <select id="m-scope" class={INPUT_CLASS}>
-                <option value="shared" selected>Gemeinsam</option>
-                <option value="personal">Persönlich</option>
-              </select>
-            </label>
-          </div>
-          <div class="grid grid-cols-2 gap-3">
-            <label class="block">
-              <span class={LABEL_CLASS}>Konto</span>
-              <select id="m-paid-from" class={INPUT_CLASS}>
-                <option value="joint" selected>Gemeinschaftskonto</option>
-                <option value="private">Privatkonto</option>
-              </select>
-            </label>
-            <label id="m-category-field" class="block">
-              <span class={LABEL_CLASS}>Kategorie</span>
-              <CategorySelect id="m-category" />
-            </label>
-          </div>
-          <label class="block">
-            <span class={LABEL_CLASS}>Datum</span>
-            <input id="m-date" type="date" value={today} autocomplete="off" class={INPUT_CLASS} />
-          </label>
-          <p id="m-preview" class="text-xs text-slate-500" aria-live="polite"></p>
-          <button type="submit" class="btn-primary w-full">
-            Speichern
-          </button>
-        </form>
-      </details>
+      {/* Umschalter für Alle/Privat/Gemeinschaft – rein client-seitiger Filter der Liste */}
+      <div class="mb-3 flex flex-wrap items-center gap-2" data-tx-filter-group>
+        <button type="button" data-tx-filter="all" class={PILL_ACTIVE}>Alle</button>
+        <button type="button" data-tx-filter="personal" class={PILL_IDLE}>Privat</button>
+        <button type="button" data-tx-filter="shared" class={PILL_IDLE}>Gemeinschaft</button>
+      </div>
 
       {transactions.length === 0 ? (
         <div class="flex flex-col items-center gap-3 rounded-2xl bg-white px-6 py-12 text-center shadow-sm ring-1 ring-slate-200">
@@ -646,6 +599,9 @@ export const TxList: FC<TxListProps & { layout?: 'mobile' | 'desktop' }> = ({
 const script = `
 window.__swInit = window.__swInit || [];
 window.__swInit.push(function () {
+var PILL_ACTIVE = ${JSON.stringify(PILL_ACTIVE)};
+var PILL_IDLE = ${JSON.stringify(PILL_IDLE)};
+
 // --- Transaktions-Lookup aus einmaliger __TX-Map statt JSON pro Button ---
 function txById(id) {
   return window.__TX && window.__TX[id] ? window.__TX[id] : null;
@@ -712,32 +668,21 @@ function openMakeRecurringModal(tx) {
 }
 
 function syncAllCategoryOptions() {
-  ['m-', 'e-'].forEach(function (prefix) {
+  ['e-'].forEach(function (prefix) {
     syncCategoryOptions(prefix, '');
   });
-}
-
-function updateManualPreview() {
-  updatePreview('m-', window.__MEMBERS || 1);
 }
 
 document.addEventListener('change', function (e) {
   if (!e.target) return;
   if (e.target.id === 's-from') rebuildRecipientOptions();
-  if (/^(m|e)-type$/.test(e.target.id)) {
+  if (/^e-type$/.test(e.target.id)) {
     var prefix = e.target.id.slice(0, e.target.id.indexOf('type'));
     syncCategoryOptions(prefix, '');
   }
-  if (/^m-(type|scope|paid-from)$/.test(e.target.id)) updateManualPreview();
-});
-
-document.addEventListener('input', function (e) {
-  if (e.target && e.target.id === 'm-amount') updateManualPreview();
 });
 
 syncAllCategoryOptions();
-swApplyDefaults('m-');
-updateManualPreview();
 
 async function refreshDashboard() {
   var month = window.__MONTH;
@@ -757,8 +702,6 @@ async function refreshDashboard() {
     $('tx-frag').innerHTML = parts[1];
     mergeTxCache($('tx-frag'));
     syncAllCategoryOptions();
-    swApplyDefaults('m-');
-    updateManualPreview();
     return true;
   } catch (err) {
     showToast('Aktualisierung fehlgeschlagen – Seite wird neu geladen', 'error');
@@ -777,8 +720,33 @@ window.__afterMutation = function () {
   return afterMutation(refreshDashboard);
 };
 
+// --- Privat/Gemeinschaft-Filter der Transaktionsliste (rein client-seitig, kein Reload nötig) ---
+var TX_FILTER = 'all';
+
+function applyTxFilter(scope) {
+  TX_FILTER = scope;
+  document.querySelectorAll('[data-scope]').forEach(function (el) {
+    el.style.display = scope === 'all' || el.getAttribute('data-scope') === scope ? '' : 'none';
+  });
+  document.querySelectorAll('[data-day-group]').forEach(function (day) {
+    var anyVisible = Array.prototype.some.call(day.querySelectorAll('[data-scope]'), function (el) {
+      return el.style.display !== 'none';
+    });
+    day.style.display = anyVisible ? '' : 'none';
+  });
+}
+
 // --- Klick-Delegation ---
 document.addEventListener('click', async function (e) {
+  var filterBtn = e.target.closest('[data-tx-filter]');
+  if (filterBtn) {
+    applyTxFilter(filterBtn.getAttribute('data-tx-filter'));
+    document.querySelectorAll('[data-tx-filter]').forEach(function (b) {
+      b.className = b === filterBtn ? PILL_ACTIVE : PILL_IDLE;
+    });
+    return;
+  }
+
   var action = e.target.closest('[data-action]');
   if (action) {
     var name = action.getAttribute('data-action');
@@ -831,6 +799,7 @@ document.addEventListener('click', async function (e) {
       );
       if (moreItems && target) target.insertAdjacentHTML('beforeend', moreItems.innerHTML);
       mergeTxCache(tmp);
+      applyTxFilter(TX_FILTER);
       // Cursor auch auf den Button der anderen Layout-Variante anwenden,
       // damit ein Layout-Wechsel (Resize) nichts doppelt nachlädt
       var newWrap = tmp.querySelector('[data-load-more-wrap]');
@@ -908,37 +877,6 @@ document.addEventListener('click', async function (e) {
 document.addEventListener('submit', async function (e) {
   var form = e.target;
   var btn = form.querySelector('button[type="submit"]');
-  if (form.id === 'manual-form') {
-    e.preventDefault();
-    var amount = validAmount($('m-amount'));
-    if (!amount) return;
-    var body = {
-      amount: amount,
-      type: $('m-type').value,
-      scope: $('m-scope').value,
-      paid_from: $('m-paid-from').value,
-      category: $('m-type').value === 'income' ? (window.__INCOME_CATEGORY || 'Einnahme') : $('m-category').value,
-      description: $('m-description').value,
-    };
-    var date = $('m-date').value;
-    if (date) body.date = date;
-    var unbusy = busy(btn);
-    try {
-      await postJson('/api/transactions', body);
-      swSaveDefaults(body.scope, body.paid_from);
-      $('m-amount').value = '';
-      $('m-description').value = '';
-      updateManualPreview();
-      showToast('Gespeichert ✓', 'ok');
-      await afterMutation(refreshDashboard);
-    } catch (err) {
-      showToast(err.message, 'error');
-    } finally {
-      unbusy();
-    }
-    return;
-  }
-
   if (form.id === 'settlement-form') {
     e.preventDefault();
     var amount = validAmount($('s-amount'));

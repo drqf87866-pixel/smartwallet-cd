@@ -1,5 +1,5 @@
 import type { FC } from 'hono/jsx';
-import { frequencyLabel } from '../lib/recurring';
+import { frequencyLabel, monthlyEquivalent } from '../lib/recurring';
 import type { TransactionAccount, TransactionScope } from '../types';
 import { Layout } from './layout';
 import { BottomNav, CategoryGlobals, CategorySelect, DesktopNav, FREQUENCY_OPTIONS, INPUT_CLASS, LABEL_CLASS, MagicSheet, UserChip } from './shared';
@@ -14,7 +14,7 @@ export type RecurringRuleView = {
   description: string;
   scope: TransactionScope;
   paid_from: TransactionAccount;
-  frequency: 'weekly' | 'monthly' | 'yearly';
+  frequency: 'weekly' | 'monthly' | 'quarterly' | 'yearly';
   day: number;
   month: number | null;
   start_date: string;
@@ -69,6 +69,9 @@ export const RecurringList: FC<{ rules: RecurringRuleView[] }> = ({ rules }) => 
                 {frequencyLabel(rule)}
                 {rule.type !== 'income' ? <> · {rule.category}</> : null}
                 {rule.next_due ? <> · fällig am {fmtDate(rule.next_due)}</> : null}
+                {monthlyEquivalent(rule.amount, rule.frequency) !== null ? (
+                  <> · ≈ {fmt(monthlyEquivalent(rule.amount, rule.frequency)!)}/Monat</>
+                ) : null}
               </p>
             </div>
             <div class="flex shrink-0 items-center gap-1.5">
@@ -164,6 +167,10 @@ const RecurringEditOverlay: FC = () => (
       </div>
       <form id="recurring-edit-form" class="grid items-end gap-3 sm:grid-cols-3 lg:grid-cols-4">
         <label class="block">
+          <span class={LABEL_CLASS}>Beschreibung</span>
+          <input id="re-description" type="text" maxlength={200} placeholder="Beschreibung" autocomplete="off" class={INPUT_CLASS} />
+        </label>
+        <label class="block">
           <span class={LABEL_CLASS}>Betrag</span>
           <input id="re-amount" type="text" inputmode="decimal" pattern="[0-9]+([.,][0-9]{1,2})?" required placeholder="z. B. 12,50" class={INPUT_CLASS} />
         </label>
@@ -191,10 +198,6 @@ const RecurringEditOverlay: FC = () => (
         <label id="re-category-field" class="block">
           <span class={LABEL_CLASS}>Kategorie</span>
           <CategorySelect id="re-category" />
-        </label>
-        <label class="block">
-          <span class={LABEL_CLASS}>Beschreibung</span>
-          <input id="re-description" type="text" maxlength={200} placeholder="Beschreibung" autocomplete="off" class={INPUT_CLASS} />
         </label>
         <label class="block">
           <span class={LABEL_CLASS}>Rhythmus</span>
@@ -525,6 +528,10 @@ document.addEventListener('submit', async function (e) {
             </summary>
             <form id="recurring-form" class="mt-2 grid gap-3 sm:grid-cols-3 lg:grid-cols-4">
               <label class="block">
+                <span class={LABEL_CLASS}>Beschreibung</span>
+                <input id="r-description" type="text" maxlength={200} placeholder="Beschreibung" autocomplete="off" class={INPUT_CLASS} />
+              </label>
+              <label class="block">
                 <span class={LABEL_CLASS}>Betrag</span>
                 <input id="r-amount" type="text" inputmode="decimal" pattern="[0-9]+([.,][0-9]{1,2})?" required placeholder="z. B. 12,50" class={INPUT_CLASS} />
               </label>
@@ -554,10 +561,6 @@ document.addEventListener('submit', async function (e) {
                 <CategorySelect id="r-category" />
               </label>
               <label class="block">
-                <span class={LABEL_CLASS}>Beschreibung</span>
-                <input id="r-description" type="text" maxlength={200} placeholder="Beschreibung" autocomplete="off" class={INPUT_CLASS} />
-              </label>
-              <label class="block">
                 <span class={LABEL_CLASS}>Rhythmus</span>
                 <select id="r-frequency" class={INPUT_CLASS}>
                   {FREQUENCY_OPTIONS.map((opt) => (
@@ -577,7 +580,7 @@ document.addEventListener('submit', async function (e) {
           </details>
         </section>
 
-        <MagicSheet />
+        <MagicSheet hideOnDesktop />
 
         <RecurringActionsOverlay />
         <RecurringEditOverlay />

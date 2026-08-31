@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { attachNextDue, occurrenceDates, nextDueDate, todayBerlin, validateRecurringInput, type RecurringRule } from '../../src/lib/recurring';
+import { attachNextDue, monthlyEquivalent, occurrenceDates, nextDueDate, todayBerlin, validateRecurringInput, type RecurringRule } from '../../src/lib/recurring';
 
 function rule(overrides: Partial<RecurringRule>): RecurringRule {
   return {
@@ -57,6 +57,16 @@ describe('occurrenceDates', () => {
     ]);
   });
 
+  it('vierteljährlich trifft nur Monate im 3er-Raster ab dem Ankermonat', () => {
+    const r = rule({ frequency: 'quarterly', day: 15, month: 2, start_date: '2026-02-15' });
+    expect(occurrenceDates(r, '2026-01-01', '2026-12-31')).toEqual([
+      '2026-02-15',
+      '2026-05-15',
+      '2026-08-15',
+      '2026-11-15',
+    ]);
+  });
+
   it('Occurrences halten sich an die Intervall-Obergrenze (end_date filtert materializeRecurring/nextDueDate)', () => {
     const r = rule({ frequency: 'monthly', day: 10, end_date: '2026-03-10' });
     // occurrenceDates kennt kein end_date – die Obergrenze kommt als toISO herein
@@ -102,6 +112,11 @@ describe('nextDueDate', () => {
     expect(nextDueDate(r, '2026-12-25')).toBe('2027-12-24');
     expect(nextDueDate(r, '2027-12-24')).toBeNull();
   });
+
+  it('vierteljährlich: nächstes Datum bleibt im 3er-Raster ab dem Ankermonat', () => {
+    const r = rule({ frequency: 'quarterly', day: 15, month: 2, start_date: '2026-02-15' });
+    expect(nextDueDate(r, '2026-06-01')).toBe('2026-08-15');
+  });
 });
 
 describe('attachNextDue', () => {
@@ -138,6 +153,16 @@ describe('validateRecurringInput', () => {
       start_date: '2026-12-24',
     });
     expect(yearly).toMatchObject({ input: { day: 24, month: 12 } });
+
+    const quarterly = validateRecurringInput({
+      amount: 60,
+      type: 'expense',
+      scope: 'shared',
+      category: 'Freizeit & Sonstiges',
+      frequency: 'quarterly',
+      start_date: '2026-05-10',
+    });
+    expect(quarterly).toMatchObject({ input: { day: 10, month: 5 } });
   });
 
   it('Einnahmen und persönliche Posten laufen immer übers Privatkonto', () => {
@@ -186,5 +211,17 @@ describe('todayBerlin', () => {
   it('bildet Europe/Berlin ab, nicht UTC (23:30 UTC = nächster Tag in Berlin)', () => {
     // 2026-08-05T23:30Z ist in Berlin bereits der 06.08. (Sommerzeit, UTC+2)
     expect(todayBerlin(new Date('2026-08-05T23:30:00Z'))).toBe('2026-08-06');
+  });
+});
+
+describe('monthlyEquivalent', () => {
+  it('rechnet yearly und quarterly auf den Monat um', () => {
+    expect(monthlyEquivalent(1200, 'yearly')).toBe(100);
+    expect(monthlyEquivalent(300, 'quarterly')).toBe(100);
+  });
+
+  it('liefert null für monthly und weekly', () => {
+    expect(monthlyEquivalent(100, 'monthly')).toBeNull();
+    expect(monthlyEquivalent(20, 'weekly')).toBeNull();
   });
 });
