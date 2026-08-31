@@ -4,10 +4,15 @@ import { setCookie, deleteCookie } from 'hono/cookie';
 import type { Env } from '../types';
 import { verifyPassword } from '../lib/password';
 import { COOKIE_NAME, TOKEN_TTL_SECONDS } from '../lib/auth';
+import { clientIp, enforceRateLimit } from '../lib/ratelimit';
 
 const auth = new Hono<Env>();
 
 auth.post('/api/login', async (c) => {
+  // Brute-Force-Schutz: 10 Login-Versuche pro Minute und IP
+  const limited = await enforceRateLimit(c, 'standard', `login:${clientIp(c)}`);
+  if (limited) return limited;
+
   const body = await c.req.json<{ email?: unknown; password?: unknown }>().catch(() => null);
   const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '';
   const password = typeof body?.password === 'string' ? body.password : '';

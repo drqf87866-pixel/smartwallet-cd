@@ -91,6 +91,10 @@ export const LoginView: FC = () => (
           </a>
         </p>
         <p class="mt-2 text-center text-xs text-slate-500">
+          Passwort vergessen? Der Ersteller deines Haushalts kann es dir in den
+          Einstellungen zurücksetzen.
+        </p>
+        <p class="mt-2 text-center text-xs text-slate-500">
           Demo-Zugänge (lokal nach Seed): anna@smartwallet.app oder ben@smartwallet.app · Passwort: demo1234
         </p>
       </div>

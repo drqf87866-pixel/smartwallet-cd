@@ -6,6 +6,7 @@ import { COOKIE_NAME, TOKEN_TTL_SECONDS } from '../lib/auth';
 import { sign } from 'hono/jwt';
 import { setCookie } from 'hono/cookie';
 import { generateInviteCode, normalizeInviteCode } from '../lib/invite';
+import { clientIp, enforceRateLimit } from '../lib/ratelimit';
 
 /**
  * Öffentliche Registrierung: neuen Haushalt erstellen oder per
@@ -16,6 +17,10 @@ const register = new Hono<Env>();
 const asString = (value: unknown): string => (typeof value === 'string' ? value : '');
 
 register.post('/api/register', async (c) => {
+  // Rate-Limit gegen Invite-Code-Raten (5 Registrierungsversuche pro Minute und IP)
+  const limited = await enforceRateLimit(c, 'strict', `register:${clientIp(c)}`);
+  if (limited) return limited;
+
   try {
     return await handleRegister(c);
   } catch (e) {

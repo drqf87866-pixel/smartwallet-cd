@@ -132,7 +132,10 @@ Seit v0.3 gibt es eine öffentliche **Registrierungsseite**:
    und registriert sich damit im selben Haushalt
 4. Unten „⚙ Einstellungen": Startstand & Fixbetrag setzen (siehe Schritt 7)
 
-**Passwort vergessen?** Per CLI zurücksetzen (Haushalts-Zuordnung bleibt erhalten):
+**Passwort vergessen?** In-App zurücksetzen: Der Haushalts-Ersteller öffnet die Einstellungen
+und nutzt beim Mitglied „Passwort zurücksetzen“ – es erscheint ein einmaliges Temp-Passwort,
+mit dem sich das Mitglied neu anmelden kann (danach unter „Passwort ändern“ ersetzen).
+Ohne Zugriff auf das Admin-Konto geht es weiterhin per CLI (Haushalts-Zuordnung bleibt erhalten):
 
 ```bash
 node scripts/create-user.mjs "Anna" "anna@beispiel.de" "NeuesSicheresPasswort" --join <EINLADUNGSCODE> > reset.sql

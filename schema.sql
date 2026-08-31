@@ -52,6 +52,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_tx_recurring_occurrence
 CREATE INDEX IF NOT EXISTS idx_transactions_user  ON transactions(user_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_date  ON transactions(date);
 CREATE INDEX IF NOT EXISTS idx_transactions_scope ON transactions(scope);
+CREATE INDEX IF NOT EXISTS idx_users_household    ON users(household_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_user_date ON transactions(user_id, date);
 
 -- Wiederkehrende Zahlungen: Rhythmus weekly (day = Wochentag 1-7, Mo=1),
 -- monthly (day = Tag 1-31, klemmt auf Monatsletzten), yearly (month 1-12 + day).

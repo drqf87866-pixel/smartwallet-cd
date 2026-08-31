@@ -54,6 +54,37 @@ if (rotateBtn) {
   });
 }
 
+document.querySelectorAll('.reset-password').forEach(function (btn) {
+  btn.addEventListener('click', async function () {
+    var name = btn.dataset.name || 'dieses Mitglied';
+    if (!(await confirmSheet({
+      title: 'Passwort von „' + name + '“ zurücksetzen?',
+      message: 'Es wird ein einmaliges Temp-Passwort erzeugt. Das bisherige Passwort ist danach ungültig.',
+      confirmText: 'Zurücksetzen',
+    }))) return;
+    try {
+      var data = await postJson('/api/household/members/' + btn.dataset.id + '/password', {}, 'PUT');
+      document.getElementById('temp-password-name').textContent = name;
+      document.getElementById('temp-password-value').textContent = data.temp_password;
+      openSheet('temp-password-overlay');
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+});
+
+var copyTempBtn = document.getElementById('copy-temp-password');
+if (copyTempBtn) {
+  copyTempBtn.addEventListener('click', function () {
+    var pw = document.getElementById('temp-password-value').textContent;
+    navigator.clipboard.writeText(pw).then(function () {
+      showToast('Temp-Passwort kopiert', 'ok');
+    }, function () {
+      showToast('Kopieren nicht möglich – bitte manuell notieren', 'info');
+    });
+  });
+}
+
 document.querySelectorAll('.remove-member').forEach(function (btn) {
   btn.addEventListener('click', async function () {
     var name = btn.dataset.name || 'dieses Mitglied';
@@ -169,19 +200,29 @@ export const SettingsView: FC<SettingsProps> = ({
         <h2 class="text-sm font-medium text-slate-500">Haushalt „{householdName}“</h2>
         <ul class="mt-3 space-y-1.5 text-sm">
           {members.map((m) => (
-            <li class="flex items-center justify-between gap-2 rounded-xl bg-slate-50 px-3 py-2.5">
-              <span class="min-w-0 truncate text-slate-700">
-                {m.name}
-                {m.name === userName ? <span class="text-slate-500"> (du)</span> : null}
-                {m.isAdmin ? (
-                  <span class="ml-2 inline-block rounded-md bg-indigo-100 px-1.5 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-wide text-indigo-600">
-                    Ersteller
-                  </span>
-                ) : null}
-              </span>
-              <span class="flex shrink-0 items-center gap-2">
-                <span class="text-xs tabular-nums text-slate-500">Beitrag: {fmt(m.monthly_contribution)}</span>
-                {isAdmin && !m.isAdmin ? (
+            <li class="rounded-xl bg-slate-50 px-3 py-2.5">
+              <div class="flex items-center justify-between gap-2">
+                <span class="min-w-0 truncate text-slate-700">
+                  {m.name}
+                  {m.name === userName ? <span class="text-slate-500"> (du)</span> : null}
+                  {m.isAdmin ? (
+                    <span class="ml-2 inline-block rounded-md bg-indigo-100 px-1.5 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-wide text-indigo-600">
+                      Ersteller
+                    </span>
+                  ) : null}
+                </span>
+                <span class="shrink-0 text-xs tabular-nums text-slate-500">Beitrag: {fmt(m.monthly_contribution)}</span>
+              </div>
+              {isAdmin && !m.isAdmin ? (
+                <div class="mt-2 flex flex-wrap items-center gap-2 border-t border-slate-200/70 pt-2">
+                  <button
+                    type="button"
+                    class="reset-password flex min-h-[32px] items-center rounded-lg border border-indigo-200 px-2 py-1 text-xs font-medium text-indigo-600 transition hover:bg-indigo-50"
+                    data-id={m.id}
+                    data-name={m.name}
+                  >
+                    Passwort zurücksetzen
+                  </button>
                   <button
                     type="button"
                     class="remove-member flex min-h-[32px] items-center rounded-lg border border-red-200 px-2 py-1 text-xs font-medium text-red-600 transition hover:bg-red-50"
@@ -190,8 +231,8 @@ export const SettingsView: FC<SettingsProps> = ({
                   >
                     Entfernen
                   </button>
-                ) : null}
-              </span>
+                </div>
+              ) : null}
             </li>
           ))}
         </ul>
@@ -267,6 +308,21 @@ export const SettingsView: FC<SettingsProps> = ({
         </form>
       </section>
 
+      <section class="card mb-4">
+        <h2 class="text-sm font-medium text-slate-500">Daten exportieren</h2>
+        <p class="mt-1 text-xs text-slate-500">
+          Alle Buchungen des Haushalts als CSV-Datei (Semikolon-getrennt, öffnet direkt in Excel).
+        </p>
+        <a
+          id="export-csv"
+          href="/api/export.csv"
+          download
+          class="mt-3 inline-flex min-h-[44px] items-center rounded-xl border border-indigo-200 bg-indigo-50 px-4 text-sm font-semibold text-indigo-600 transition active:scale-95"
+        >
+          CSV exportieren
+        </a>
+      </section>
+
       <section class="card">
         <h2 class="text-sm font-medium text-slate-500">Passwort ändern</h2>
         <form id="password-form" class="mt-3 grid gap-3 sm:grid-cols-3">
@@ -294,6 +350,38 @@ export const SettingsView: FC<SettingsProps> = ({
         </form>
       </section>
     </main>
+
+    {/* Temp-Passwort nach Admin-Reset – wird nur einmal angezeigt */}
+    <div id="temp-password-overlay" class="fixed inset-0 z-50 hidden">
+      <div class="absolute inset-0 bg-slate-900/40" data-close="temp-password-overlay"></div>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="temp-password-title"
+        class="safe-bottom absolute inset-x-0 bottom-0 rounded-t-2xl bg-white p-5 shadow-xl sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:w-[26rem] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl"
+      >
+        <div class="mx-auto mb-4 h-1.5 w-10 rounded-full bg-slate-200 sm:hidden" aria-hidden="true"></div>
+        <h2 id="temp-password-title" class="text-base font-semibold text-slate-800">
+          Temp-Passwort für <span id="temp-password-name"></span>
+        </h2>
+        <p class="mt-1.5 text-sm leading-relaxed text-slate-600">
+          Das alte Passwort ist ungültig. Gib das Temp-Passwort dem Mitglied weiter – es wird nur
+          jetzt angezeigt und sollte nach der Anmeldung unter „Passwort ändern“ ersetzt werden.
+        </p>
+        <p
+          id="temp-password-value"
+          class="mt-3 select-all rounded-xl bg-slate-100 px-4 py-3 text-center font-mono text-lg font-semibold tracking-wider text-slate-800"
+        ></p>
+        <div class="mt-4 grid gap-2">
+          <button type="button" id="copy-temp-password" class="btn-primary w-full">
+            Temp-Passwort kopieren
+          </button>
+          <button type="button" data-close="temp-password-overlay" class="btn-secondary w-full">
+            Schließen
+          </button>
+        </div>
+      </div>
+    </div>
 
     <BottomNav page="settings" />
     <MagicSheet />

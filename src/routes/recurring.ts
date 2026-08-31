@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Env } from '../types';
 import { requireAuth } from '../lib/auth';
-import { validateRecurringInput, nextDueDate, todayBerlin, materializeRecurring, type RecurringRule } from '../lib/recurring';
+import { validateRecurringInput, todayBerlin, materializeRecurring, loadSkipMap, attachNextDue, nextDueDate, type RecurringRule } from '../lib/recurring';
 
 const recurring = new Hono<Env>();
 
@@ -40,19 +40,8 @@ recurring.get('/api/recurring', async (c) => {
     .all<RecurringRule>();
 
   const today = todayBerlin();
-  const withNextDue = await Promise.all(
-    rules.map(async (rule) => {
-      if (!rule.active) return { ...rule, next_due: null };
-      const { results: skips } = await c.env.DB
-        .prepare('SELECT due_date FROM recurring_skips WHERE recurring_id = ?1')
-        .bind(rule.id)
-        .all<{ due_date: string }>();
-      return {
-        ...rule,
-        next_due: nextDueDate(rule, today, new Set(skips.map((s) => s.due_date))),
-      };
-    }),
-  );
+  const skipMap = await loadSkipMap(c.env.DB, rules.filter((r) => r.active).map((r) => r.id));
+  const withNextDue = attachNextDue(rules, skipMap, today);
 
   return c.json({ rules: withNextDue, today });
 });

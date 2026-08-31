@@ -14,11 +14,15 @@ export const FREQUENCY_OPTIONS = [
 
 /** Kategorie-Dropdown – Optionen werden per JS je nach Art (Ausgabe/Einnahme) befüllt. */
 export const CategorySelect: FC<{ id: string }> = ({ id }) => (
-  <select
-    id={id}
-    class={INPUT_CLASS}
-    data-expense-cats={JSON.stringify(EXPENSE_CATEGORIES)}
-    data-income-cats={JSON.stringify(INCOME_CATEGORIES)}
+  <select id={id} class={INPUT_CLASS} />
+);
+
+/** Einmalig Kategorien global setzen – vermeidet JSON.stringify auf jedem Select. */
+export const CategoryGlobals: FC = () => (
+  <script
+    dangerouslySetInnerHTML={{
+      __html: `window.__EXPENSE_CATS=${JSON.stringify(EXPENSE_CATEGORIES)};window.__INCOME_CATS=${JSON.stringify(INCOME_CATEGORIES)};`,
+    }}
   />
 );
 

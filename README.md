@@ -43,6 +43,24 @@ curl -X POST http://localhost:8787/api/dev/seed
 | Anna   | anna@smartwallet.app | `demo1234` |
 | Ben    | ben@smartwallet.app  | `demo1234` |
 
+## Tests
+
+```bash
+npm test
+```
+
+Die Suite läuft mit [vitest-pool-workers](https://developers.cloudflare.com/workers/testing/vitest-integration/)
+direkt in der workerd-Runtime: Unit-Tests gegen die Kernlogik (`src/lib/*`:
+Wiederkehrende Zahlungen, Validierung, Kategorien, Invite-Codes, Passwort-Hashing) und
+Integrationstests gegen den echten Worker inklusive D1 (`test/integration/api.spec.ts`:
+Registrierung, Login, Transaktionen, Budgets, Passwort-Reset, Haushalts-Scoping, CSV-Export).
+
+Für die Tests gibt es `vitest.wrangler.toml` – eine schlanke Kopie der Wrangler-Konfiguration
+ohne `[assets]`, ohne Rate-Limit-Bindings (der Helper fail-t dann offen) und ohne Cron.
+Das Schema wird beim Setup aus `schema.sql` in die Test-D1 gespielt; `npm run typecheck`
+prüft neben `src/` auch `test/`. Ein GitHub-Actions-Workflow (`.github/workflows/ci.yml`)
+führt Typecheck, CSS-Build, Tests und `wrangler deploy --dry-run` bei jedem Push/PR aus.
+
 ## Endpoints
 
 | Route                 | Methode | Auth | Beschreibung                                                    |
@@ -50,7 +68,7 @@ curl -X POST http://localhost:8787/api/dev/seed
 | `/`                   | GET     | –    | Redirect zu `/dashboard` bzw. `/login`                          |
 | `/login`              | GET     | –    | Login-Seite (Hono JSX)                                          |
 | `/register`           | GET     | –    | Registrierungsseite (Haushalt erstellen / Code einlösen)         |
-| `/dashboard`          | GET     | JWT  | Dashboard: 4 Karten, Historie, Magic Input, Einstellungen       |
+| `/dashboard`          | GET     | JWT  | Dashboard: 4 Karten, Budgets, Historie, Magic Input              |
 | `/api/health`         | GET     | –    | D1-Konnektivitätscheck                                          |
 | `/api/dev/seed`       | POST    | –    | Demo-Nutzer + Beispiel-Transaktionen + Settings anlegen (nur lokal, `ENABLE_DEV_SEED`) |
 | `/api/login`          | POST    | –    | Login, setzt JWT als HTTP-only-Cookie (`sw_token`)               |
@@ -65,7 +83,12 @@ curl -X POST http://localhost:8787/api/dev/seed
 | `/api/recurring`      | GET/POST| JWT  | Wiederkehrende Zahlungen: Regeln listen/anlegen                  |
 | `/api/recurring/:id`  | PUT/DEL | JWT  | Regel ändern/pausieren (`{active}`) / löschen (Buchungen bleiben)|
 | `/api/budgets`        | GET/PUT | PUT: JWT | Budgets je Kategorie (`month: 'default'` oder `YYYY-MM`)     |
-| `/stats`              | GET     | JWT  | Statistik: Kategorien-Donut, 12-Monats-Verlauf, Top-Ausgaben     |
+| `/api/household/invite` | PUT   | JWT (Admin) | Einladungscode rotieren (alte Links ungültig)             |
+| `/api/household/members/:id` | DELETE | JWT (Admin) | Mitglied entfernen (nur ohne offene Salden)          |
+| `/api/household/members/:id/password` | PUT | JWT (Admin) | Passwort zurücksetzen, antwortet einmalig mit Temp-Passwort |
+| `/api/me/password`    | PUT     | JWT  | Eigenes Passwort ändern (aktuelles verifizieren)                 |
+| `/api/export.csv`     | GET     | JWT  | Alle Buchungen des Haushalts als CSV (Semikolon, UTF-8-BOM)      |
+| `/stats`              | GET     | JWT  | Statistik: Kategorien-Donut, 6-Monats-Verlauf, Top-Ausgaben      |
 
 ## Registrierung & Haushalte
 
@@ -75,6 +98,15 @@ Registrierung endet direkt im eingeloggtten Dashboard. Haushalte können beliebi
 haben; gemeinsame Ausgaben werden gleicheilig 1/N umgelegt, Ausgleiche laufen paarweise
 (`counterpart_id`). Der Einladungscode steht im Dashboard jederzeit zum Kopieren bereit
 (Link `/register?code=XYZ` legt den Code im Formular vor).
+
+## Passwort vergessen
+
+Es gibt keinen E-Mail-Versand (Workers ohne externen Mail-Dienst). Stattdessen setzt der
+Haushalts-Ersteller in den Einstellungen per „Passwort zurücksetzen“ das Passwort eines
+Mitglieds zurück und erhält ein einmaliges Temp-Passwort angezeigt (12 Zeichen, nur in der
+API-Antwort, wird nicht gespeichert). Das Mitglied meldet sich damit an und ändert das
+Passwort anschließend selbst. Bereits angemeldete Geräte bleiben gültig (JWT hängt nicht am
+Passwort); das Passwort des Erstellers selbst kann nicht per Reset geändert werden.
 
 ## Konten-Modell
 
@@ -97,6 +129,25 @@ Zwei (oder mehr) Privatkonten + ein Gemeinschaftskonto pro Haushalt. Jede Transa
 
 - Monat navigierbar über `?month=YYYY-MM` (Pfeile ‹ ›) – betrifft Ausgaben-Karte und Historie
 - Schulden-Karte rechnet über alle Monate (wegen Ausgleichszahlungen)
+- Verlauf lädt 50 Buchungen pro Seite; „Mehr laden“ hängt die nächsten per Fragment an
+  (`/dashboard/fragments/list-more` mit Cursor). Der älteste geladene Tag wird immer
+  vollständig ausgeliefert, damit Tagesgruppen nicht zerreißt
+
+## CSV-Export
+
+In den Einstellungen („Daten exportieren“) bzw. direkt `GET /api/export.csv`: alle Buchungen
+des Haushalts als CSV-Datei – Semikolon-getrennt, Beträge mit Komma, UTF-8 mit BOM und CRLF,
+damit die Datei im deutschen Excel direkt korrekt öffnet. Enthalten sind Datum, Art, Bereich,
+Konto, Kategorie, Beschreibung, Betrag, Ersteller und Regel-ID (bei wiederkehrenden Buchungen).
+
+## Rate-Limiting
+
+Login, Registrierung, Magic-Input und Passwort-Reset sind über das native Cloudflare-Rate-
+Limiting geschützt (`[[ratelimits]]` in `wrangler.toml`, Wrangler ≥ 4.36): Standard-Binding
+10 Anfragen/Minute je Key (Login je IP, Magic-Input je Nutzer), Strict-Binding 5/Minute
+(Registrierung je IP, Passwort-Reset je Admin). Bei Überschreitung antworten die Endpunkte
+mit 429 und einer deutschen Fehlermeldung; fällt das Binding aus, failen die Endpunkte
+bewusst offen statt Zugriffe zu blockieren.
 
 ## Kategorien
 
@@ -108,31 +159,36 @@ Sie gelten an drei Stellen:
 
 - **Magic Input**: Gemini bekommt die Kategorien als feste Enum im `responseSchema` und
   wählt daraus aus (Pro-Prompt-Anleitung je nach expense/income/transfer).
-- **Manuelle Eingabe & Bearbeiten**: Kategorie-Felder sind Textfelder mit
-  `datalist`-Dropdown (`#standard-categories`) – Vorschläge auswählen oder frei eintippen.
-- **Budgets**: das Anlage-Dropdown bietet alle Ausgaben-Kategorien.
+- **Manuelle Eingabe & Bearbeiten**: Kategorie-Felder sind geschlossene `<select>`-Dropdowns
+  (serverseitig gegen die kanonische Liste validiert).
+- **Budgets**: das Verwaltungs-Overlay listet alle Ausgaben-Kategorien.
 
 ## Budgets
 
-Im Dashboard (Sektion „🎯 Budgets") lassen sich monatliche Budgets pro Kategorie setzen.
-Ein Budget mit `month = 'default'` gilt für jeden Monat (Hinweis „gilt für jeden Monat“),
-ein Budget mit konkretem `YYYY-MM` überschreibt es nur für diesen Monat. Angezeigt wird
-Verbrauch mit Fortschrittsbalken (grün < 80 %, amber < 100 %, rot darüber); leeres Feld
-plus ✓ löscht das Budget. Gezählt werden alle Ausgaben (`type = 'expense'`) des Haushalts
-im angewählten Monat.
+Im Dashboard (Sektion „Budgets“ zwischen Kopf-Karten und Verlauf) sieht man je Kategorie
+Verbrauch und Fortschrittsbalken (grün < 75 %, amber < 100 %, rot darüber), sortiert nach
+Auslastung. Über „Verwalten“ öffnet sich ein Overlay: Geltungsbereich „Jeden Monat (Standard)“
+oder „Nur [Monat]“ wählen, Beträge je Ausgaben-Kategorie eintragen, leeres Feld = kein Budget
+(geleert speichern löscht das Budget via `PUT /api/budgets` mit `amount: 0`). Ein Budget mit
+`month = 'default'` gilt für jeden Monat, ein konkretes `YYYY-MM` überschreibt es nur für
+diesen Monat. Gezählt werden alle Ausgaben (`type = 'expense'`) des Haushalts im gewählten
+Monat – auch private, da Budgets den gemeinsamen Konsum abbilden (Aggregat, keine Einzelpreise
+anderer Mitglieder sichtbar). Die Sektion aktualisiert sich nach jeder Buchung automatisch
+per HTML-Fragment (`/dashboard/fragments/budgets`).
 
 ## Statistik
 
 `/stats` (Monat navigierbar, gleicher `?month=`-Parameter wie das Dashboard): 
-Ausgaben-Donut nach Kategorie, 12-Monats-Verlauf (Einnahmen/Ausgaben als Balken-SVG),
-Top-10-Ausgaben und Monatsbilanz – alles ohne externe Chart-Library als Inline-SVG.
+Ausgaben-Donut nach Kategorie, 6-Monats-Verlauf (Einnahmen/Ausgaben als Balken-SVG,
+Pro-Kopf-Sicht), Top-10-Ausgaben und Monatsbilanz – alles ohne externe Chart-Library
+als Inline-SVG.
 
 ## Wiederkehrende Zahlungen
 
-Im Dashboard (Sektion „🔁 Wiederkehrende Zahlungen") lassen sich Regeln anlegen – z. B.
-Miete (monatlich am 1.), Streaming-Abo (monatlich) oder Gehalt (Einnahme). Typen:
-`weekly` (day = Wochentag 1–7, Mo = 1), `monthly` (day = Tag 1–31, klemmt auf den
-Monatsletzten) und `yearly` (month + day).
+Eigene Seite `/recurring` (fünfter Punkt unten in der Bottom-Navigation bzw. Button im
+Desktop-Kopf): Regeln anlegen – z. B. Miete (monatlich am 1.), Streaming-Abo (monatlich)
+oder Gehalt (Einnahme). Typen: `weekly` (day = Wochentag 1–7, Mo = 1), `monthly`
+(day = Tag 1–31, klemmt auf den Monatsletzten) und `yearly` (month + day).
 
 **Materialization:** Fällige Occurrences werden als normale Transaktionen erzeugt –
 lazy beim Dashboard-/Fragment-Load (idempotent über den Unique-Index
@@ -175,3 +231,14 @@ curl -b cookies.txt -X POST http://localhost:8787/api/recurring \
 
 Lokal in `.dev.vars` (`JWT_SECRET`, `GEMINI_API_KEY`),
 für Deploy via `npx wrangler secret put <NAME>`.
+
+## Backlog (bewusst noch nicht umgesetzt)
+
+- Dark Mode (Tailwind `dark:`-Varianten + Umschalter, Standard = Systemeinstellung)
+- Sparziele (gemeinsame Ziele mit Zielbetrag, Fortschritt, Einzahlungen)
+- i18n / Multi-Currency (UI und `src/lib/format.ts` sind fest auf Deutsch/EUR)
+- Echtes Offline-Erlebnis (IndexedDB-Warteschlange im Service Worker statt statischer Offline-Seite)
+- Push-Notification zum Monatsabschluss
+- 2FA / Session-Verwaltung (JWT-Revocation, „überall abmelden“)
+- Ganzzahl-Cent-Buchhaltung (Beträge liegen als REAL in D1)
+- Korrekte Schuldenlogik für 3+ Mitglieder mit ungleichen Beiträgen (aktuell 1/N-Näherung)

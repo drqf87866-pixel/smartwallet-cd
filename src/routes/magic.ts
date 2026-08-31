@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { Env, TransactionAccount } from '../types';
 import { requireAuth } from '../lib/auth';
+import { enforceRateLimit } from '../lib/ratelimit';
 import { extractTransaction } from '../lib/gemini';
 import { validateTransactionInput } from '../lib/validate';
 
@@ -9,6 +10,10 @@ const magic = new Hono<Env>();
 magic.use('/api/magic-entry', requireAuth);
 
 magic.post('/api/magic-entry', async (c) => {
+  // Kosten-Schutz: jeder Gemini-Aufruf kostet – max. 10 pro Minute und Nutzer
+  const limited = await enforceRateLimit(c, 'standard', `magic:${c.get('userId')}`);
+  if (limited) return limited;
+
   const body = await c.req.json<{ text?: unknown; paid_from?: unknown }>().catch(() => null);
   const text = typeof body?.text === 'string' ? body.text.trim() : '';
   if (text.length < 3 || text.length > 500) {

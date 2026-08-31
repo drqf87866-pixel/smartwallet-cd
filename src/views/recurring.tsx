@@ -2,7 +2,7 @@ import type { FC } from 'hono/jsx';
 import { frequencyLabel } from '../lib/recurring';
 import type { TransactionAccount, TransactionScope } from '../types';
 import { Layout } from './layout';
-import { BottomNav, CategorySelect, FREQUENCY_OPTIONS, INPUT_CLASS, LABEL_CLASS, MagicSheet, UserChip } from './shared';
+import { BottomNav, CategoryGlobals, CategorySelect, FREQUENCY_OPTIONS, INPUT_CLASS, LABEL_CLASS, MagicSheet, UserChip } from './shared';
 import { fmt, fmtDate } from '../lib/format';
 
 /** Regel inkl. berechnetem nächsten Fälligkeitsdatum (null = inaktiv/keine mehr). */
@@ -29,6 +29,16 @@ const Icon: FC<{ path: string }> = ({ path }) => (
   </svg>
 );
 
+/** Einmal serialisierte Regel-Map statt JSON pro Listeneintrag. */
+const RecRulesCacheScript: FC<{ rules: RecurringRuleView[] }> = ({ rules }) => {
+  if (rules.length === 0) return null;
+  const map: Record<number, RecurringRuleView> = {};
+  for (const rule of rules) map[rule.id] = rule;
+  return (
+    <script type="application/json" data-rec-cache dangerouslySetInnerHTML={{ __html: JSON.stringify(map) }} />
+  );
+};
+
 /** Regel-Liste – eigenes Fragment (id recurring-frag). */
 export const RecurringList: FC<{ rules: RecurringRuleView[] }> = ({ rules }) => {
   if (rules.length === 0) {
@@ -44,42 +54,46 @@ export const RecurringList: FC<{ rules: RecurringRuleView[] }> = ({ rules }) => 
     );
   }
   return (
-    <ul class="divide-y divide-slate-100">
-      {rules.map((rule) => (
-        <li class="flex items-center justify-between gap-3 py-3">
-          <div class="min-w-0">
-            <p class="truncate text-sm font-medium text-slate-700">
-              {rule.description || rule.category}
-              {rule.active ? null : (
-                <span class="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">pausiert</span>
-              )}
-            </p>
-            <p class="mt-0.5 text-xs text-slate-500">
-              {frequencyLabel(rule)} · {rule.category}
-              {rule.next_due ? <> · fällig am {fmtDate(rule.next_due)}</> : null}
-            </p>
-          </div>
-          <div class="flex shrink-0 items-center gap-1.5">
-            <span class={'whitespace-nowrap text-sm font-semibold tabular-nums ' + (rule.type === 'income' ? 'text-emerald-700' : 'text-red-600')}>
-              {rule.type === 'income' ? '+' : '−'}
-              {fmt(rule.amount)}
-            </span>
-            <button
-              type="button"
-              data-rec-menu={JSON.stringify(rule)}
-              aria-label="Regel bearbeiten oder mehr Optionen"
-              class="flex h-11 w-11 items-center justify-center rounded-full text-slate-400 transition active:bg-slate-100"
-            >
-              <svg viewBox="0 0 24 24" fill="currentColor" class="h-5 w-5" aria-hidden="true">
-                <circle cx="5" cy="12" r="1.6" />
-                <circle cx="12" cy="12" r="1.6" />
-                <circle cx="19" cy="12" r="1.6" />
-              </svg>
-            </button>
-          </div>
-        </li>
-      ))}
-    </ul>
+    <>
+      <ul class="divide-y divide-slate-100">
+        {rules.map((rule) => (
+          <li class="flex items-center justify-between gap-3 py-3">
+            <div class="min-w-0">
+              <p class="truncate text-sm font-medium text-slate-700">
+                {rule.description || rule.category}
+                {rule.active ? null : (
+                  <span class="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">pausiert</span>
+                )}
+              </p>
+              <p class="mt-0.5 text-xs text-slate-500">
+                {frequencyLabel(rule)} · {rule.category}
+                {rule.next_due ? <> · fällig am {fmtDate(rule.next_due)}</> : null}
+              </p>
+            </div>
+            <div class="flex shrink-0 items-center gap-1.5">
+              <span class={'whitespace-nowrap text-sm font-semibold tabular-nums ' + (rule.type === 'income' ? 'text-emerald-700' : 'text-red-600')}>
+                {rule.type === 'income' ? '+' : '−'}
+                {fmt(rule.amount)}
+              </span>
+              <button
+                type="button"
+                data-rec-menu
+                data-rec-id={rule.id}
+                aria-label="Regel bearbeiten oder mehr Optionen"
+                class="flex h-11 w-11 items-center justify-center rounded-full text-slate-400 transition active:bg-slate-100"
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor" class="h-5 w-5" aria-hidden="true">
+                  <circle cx="5" cy="12" r="1.6" />
+                  <circle cx="12" cy="12" r="1.6" />
+                  <circle cx="19" cy="12" r="1.6" />
+                </svg>
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+      <RecRulesCacheScript rules={rules} />
+    </>
   );
 };
 
@@ -220,6 +234,22 @@ export const RecurringView: FC<RecurringViewProps> = ({ userName, householdName,
 window.__MEMBERS = ${JSON.stringify(memberCount)};
 window.__swInit = window.__swInit || [];
 window.__swInit.push(function () {
+function recById(id) {
+  return window.__REC_RULES && window.__REC_RULES[id] ? window.__REC_RULES[id] : null;
+}
+function recFromEl(el) {
+  var id = el.getAttribute('data-rec-id');
+  return id ? recById(id) : null;
+}
+function mergeRecCache(root) {
+  var el = (root || document).querySelector('[data-rec-cache]');
+  if (!el) return;
+  try {
+    window.__REC_RULES = Object.assign(window.__REC_RULES || {}, JSON.parse(el.textContent));
+  } catch (e) {}
+}
+mergeRecCache(document);
+
 function syncAllCategoryOptions() {
   ['r-', 're-'].forEach(function (prefix) {
     syncCategoryOptions(prefix, '');
@@ -250,6 +280,7 @@ updateRecurringPreview();
 async function refreshRecurring() {
   if (!$('recurring-frag')) return false;
   $('recurring-frag').innerHTML = await fetchFragment('/recurring/fragments/list');
+  mergeRecCache($('recurring-frag'));
   syncAllCategoryOptions();
   swApplyDefaults('r-');
   updateRecurringPreview();
@@ -287,7 +318,8 @@ document.addEventListener('click', async function (e) {
   // Regel-Menü öffnen: Buchen/Pausieren/Bearbeiten/Löschen in der Daumenzone
   var recMenu = e.target.closest('[data-rec-menu]');
   if (recMenu) {
-    var rule = JSON.parse(recMenu.getAttribute('data-rec-menu'));
+    var rule = recFromEl(recMenu);
+    if (!rule) return;
     REC_EDITING_ID = rule.id;
     REC_ACTIVE = rule.active;
     REC_BOOK = rule.next_due;
@@ -301,7 +333,7 @@ document.addEventListener('click', async function (e) {
       toggleBtn.textContent = rule.active ? 'Pausieren' : 'Aktivieren';
     }
     var editBtn = document.querySelector('#recurring-actions-overlay [data-rec-edit]');
-    if (editBtn) editBtn.setAttribute('data-rec-edit', JSON.stringify(rule));
+    if (editBtn) editBtn.setAttribute('data-rec-id', rule.id);
     var delBtn = document.querySelector('#recurring-actions-overlay [data-rec-delete]');
     if (delBtn) delBtn.setAttribute('data-rec-delete', rule.id);
     openSheet('recurring-actions-overlay');
@@ -346,7 +378,8 @@ document.addEventListener('click', async function (e) {
 
   var recEdit = e.target.closest('[data-rec-edit]');
   if (recEdit) {
-    var rule2 = JSON.parse(recEdit.getAttribute('data-rec-edit'));
+    var rule2 = recFromEl(recEdit);
+    if (!rule2) return;
     REC_EDITING_ID = rule2.id;
     fillRecurringForm('re-', rule2);
     closeSheet('recurring-actions-overlay');
@@ -447,6 +480,7 @@ document.addEventListener('submit', async function (e) {
 
   return (
     <Layout title="Wiederkehrende Zahlungen">
+      <CategoryGlobals />
       <main class="mx-auto max-w-6xl px-4 pb-44 pt-4 sm:px-8 md:pb-8">
         {/* Schlanker Kontext-Kopf (Content-First) */}
         <header class="mb-4 md:hidden">

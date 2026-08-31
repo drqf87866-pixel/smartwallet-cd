@@ -345,7 +345,12 @@
     var isTransfer = typeSel.value === 'transfer';
     var isIncome = typeSel.value === 'income';
     if (isTransfer) desired = 'Überweisung';
-    var cats = JSON.parse(catSel.getAttribute(isIncome || isTransfer ? 'data-income-cats' : 'data-expense-cats'));
+    var cats = isIncome || isTransfer
+      ? (window.__INCOME_CATS || [])
+      : (window.__EXPENSE_CATS || []);
+    if (!cats.length) {
+      cats = JSON.parse(catSel.getAttribute(isIncome || isTransfer ? 'data-income-cats' : 'data-expense-cats') || '[]');
+    }
     if (isTransfer) cats = ['Überweisung'];
     catSel.disabled = isTransfer;
     catSel.innerHTML = '';

@@ -1,0 +1,18 @@
+name = "smartwallet-test"
+main = "src/index.ts"
+compatibility_date = "2025-05-05"
+
+# Schlanke Test-Variante der wrangler.toml für vitest-pool-workers:
+# nur D1, keine [assets]-Sektion, keine Rate-Limit-Bindings (fehlen sie,
+# failt der Helper in src/lib/ratelimit.ts bewusst offen) und kein Cron.
+# Secrets sind hier einfache [vars], da Tests keine echten Keys brauchen.
+
+[[d1_databases]]
+binding = "DB"
+database_name = "test-db"
+database_id = "test-db"
+
+[vars]
+GEMINI_MODEL = "gemini-test"
+JWT_SECRET = "test-secret-not-for-production"
+GEMINI_API_KEY = "test-key"

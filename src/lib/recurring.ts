@@ -47,9 +47,12 @@ const MONTH_NAMES = [
   'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember',
 ];
 
+// Formatter einmalig anlegen – vermeidet wiederholte Intl-Konstruktion pro Request
+const berlinDayFmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Berlin' });
+
 /** Heutiges Datum in Europe/Berlin als YYYY-MM-DD (nicht UTC – sonst verschiebt sich der Buchungstag). */
 export function todayBerlin(now = new Date()): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Berlin' }).format(now);
+  return berlinDayFmt.format(now);
 }
 
 const isDateStr = (value: unknown): value is string =>
@@ -217,6 +220,18 @@ export function occurrenceDates(rule: RecurringRule, fromISO: string, toISO: str
   return dates;
 }
 
+/** Prüft ein Kandidatdatum und überspringt bei end_date/skips. */
+function acceptDueDate(
+  date: string,
+  rule: RecurringRule,
+  skips: Set<string> | undefined,
+): string | null {
+  if (date < rule.start_date) return null;
+  if (rule.end_date && date > rule.end_date) return null;
+  if (skips?.has(date)) return null;
+  return date;
+}
+
 /** Nächstes Fälligkeitsdatum nach `afterISO` (Übersicht: „fällig am …“). */
 export function nextDueDate(rule: RecurringRule, afterISO: string, skips?: Set<string>): string | null {
   const horizon = clampedDate(
@@ -224,11 +239,60 @@ export function nextDueDate(rule: RecurringRule, afterISO: string, skips?: Set<s
     Number(afterISO.slice(5, 7)),
     1,
   );
-  const dates = occurrenceDates(rule, afterISO, horizon).filter((d) => d !== afterISO);
-  for (const date of dates) {
+
+  // Schrittweise Vorschreitung statt occurrenceDates-Array – O(k) statt O(H) Allokationen
+  if (rule.frequency === 'weekly') {
+    const cursor = new Date(afterISO + OCCURRENCE_TIME);
+    const offset = (rule.day - 1 - (cursor.getUTCDay() + 6) % 7 + 7) % 7;
+    cursor.setUTCDate(cursor.getUTCDate() + offset);
+    let date = cursor.toISOString().slice(0, 10);
+    if (date <= afterISO) {
+      cursor.setUTCDate(cursor.getUTCDate() + 7);
+      date = cursor.toISOString().slice(0, 10);
+    }
+    while (date <= horizon) {
+      const accepted = acceptDueDate(date, rule, skips);
+      if (accepted) return accepted;
+      if (rule.end_date && date > rule.end_date) return null;
+      cursor.setUTCDate(cursor.getUTCDate() + 7);
+      date = cursor.toISOString().slice(0, 10);
+    }
+    return null;
+  }
+
+  if (rule.frequency === 'monthly') {
+    let [year, month] = afterISO.split('-').map(Number);
+    let date = clampedDate(year, month, rule.day);
+    if (date <= afterISO) {
+      month += 1;
+      if (month > 12) { month = 1; year += 1; }
+      date = clampedDate(year, month, rule.day);
+    }
+    while (date <= horizon) {
+      const accepted = acceptDueDate(date, rule, skips);
+      if (accepted) return accepted;
+      if (rule.end_date && date > rule.end_date) return null;
+      month += 1;
+      if (month > 12) { month = 1; year += 1; }
+      date = clampedDate(year, month, rule.day);
+    }
+    return null;
+  }
+
+  // yearly
+  let year = Number(afterISO.slice(0, 4));
+  const month = rule.month!;
+  let date = clampedDate(year, month, rule.day);
+  if (date <= afterISO) {
+    year += 1;
+    date = clampedDate(year, month, rule.day);
+  }
+  while (date <= horizon) {
+    const accepted = acceptDueDate(date, rule, skips);
+    if (accepted) return accepted;
     if (rule.end_date && date > rule.end_date) return null;
-    if (skips?.has(date)) continue;
-    return date;
+    year += 1;
+    date = clampedDate(year, month, rule.day);
   }
   return null;
 }
@@ -239,6 +303,43 @@ export function frequencyLabel(rule: Pick<RecurringRule, 'frequency' | 'day' | '
   if (rule.frequency === 'monthly') return `monatlich am ${rule.day}.`;
   const monthName = MONTH_NAMES[(rule.month ?? 1) - 1];
   return `jährlich am ${rule.day}. ${monthName}`;
+}
+
+/** Lädt alle Skips für die gegebenen Regeln in einem Query – vermeidet N+1. */
+export async function loadSkipMap(db: D1Database, ruleIds: number[]): Promise<Map<number, Set<string>>> {
+  const map = new Map<number, Set<string>>();
+  if (ruleIds.length === 0) return map;
+
+  const placeholders = ruleIds.map((_, i) => `?${i + 1}`).join(', ');
+  const { results } = await db
+    .prepare(`SELECT recurring_id, due_date FROM recurring_skips WHERE recurring_id IN (${placeholders})`)
+    .bind(...ruleIds)
+    .all<{ recurring_id: number; due_date: string }>();
+
+  for (const row of results) {
+    let set = map.get(row.recurring_id);
+    if (!set) {
+      set = new Set<string>();
+      map.set(row.recurring_id, set);
+    }
+    set.add(row.due_date);
+  }
+  return map;
+}
+
+/** Berechnet next_due für alle Regeln synchron (Skip-Map muss vorab geladen sein). */
+export function attachNextDue<T extends RecurringRule>(
+  rules: T[],
+  skipMap: Map<number, Set<string>>,
+  today: string,
+): (T & { next_due: string | null })[] {
+  return rules.map((rule) => {
+    if (!rule.active) return { ...rule, next_due: null };
+    return {
+      ...rule,
+      next_due: nextDueDate(rule, today, skipMap.get(rule.id)),
+    };
+  });
 }
 
 /**
@@ -260,6 +361,9 @@ export async function materializeRecurring(
   // Untergrenze: max. BACKFILL_MONTHS zurück (Monatsanfang, Tag-Effekte egal)
   const backfillFloor = `${shiftMonthPrefix(today.slice(0, 7), -BACKFILL_MONTHS)}-01`;
 
+  // Ein Query für alle Skips statt pro Regel – reduziert Roundtrips von O(R) auf O(1)
+  const skipMap = await loadSkipMap(db, rules.map((r) => r.id));
+
   const insert = db.prepare(
     `INSERT OR IGNORE INTO transactions
        (user_id, amount, type, category, description, date, scope, paid_from, recurring_id)
@@ -274,12 +378,8 @@ export async function materializeRecurring(
     const dates = occurrenceDates(rule, lower, upper);
     if (dates.length === 0) continue;
 
-    const { results: skipRows } = await db
-      .prepare('SELECT due_date FROM recurring_skips WHERE recurring_id = ?1')
-      .bind(rule.id)
-      .all<{ due_date: string }>();
-    const skipSet = new Set(skipRows.map((row) => row.due_date));
-    const pending = dates.filter((d) => !skipSet.has(d));
+    const skipSet = skipMap.get(rule.id);
+    const pending = skipSet ? dates.filter((d) => !skipSet.has(d)) : dates;
     if (pending.length === 0) continue;
     await db.batch(
       pending.map((d) =>

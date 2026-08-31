@@ -6,15 +6,28 @@ import type { Env } from '../types';
 import { COOKIE_NAME } from '../lib/auth';
 import { LoginView } from '../views/login';
 import { RegisterView } from '../views/register';
-import { DashboardView, SummaryCards, TxList, type DashboardTx, type DebtRow } from '../views/dashboard';
+import { BudgetsCard, DashboardView, SummaryCards, TxList, TxListMore, type DashboardTx, type DebtRow } from '../views/dashboard';
 import { RecurringList, RecurringView } from '../views/recurring';
 import { StatsView } from '../views/stats';
 import { SettingsView } from '../views/settings';
-import { materializeRecurring, nextDueDate, todayBerlin, type RecurringRule } from '../lib/recurring';
+import {
+  attachNextDue,
+  loadSkipMap,
+  materializeRecurring,
+  todayBerlin,
+  type RecurringRule,
+} from '../lib/recurring';
 
 const pages = new Hono<Env>();
 
 type AuthInfo = { uid: number; hid: number; name: string; email: string };
+type LoaderOptions = { skipMaterialize?: boolean };
+
+/** SSR-Layout aus User-Agent – vermeidet doppeltes Rendern von Mobile+Desktop. */
+function detectLayout(c: Context<Env>): 'mobile' | 'desktop' {
+  const ua = c.req.header('User-Agent') ?? '';
+  return /Mobile|Android|iPhone|iPad/i.test(ua) ? 'mobile' : 'desktop';
+}
 
 /** Cookie-basierte Auth-Prüfung für Seiten: bei Misserfolg wird redirectet statt 401 JSON. */
 async function getAuth(c: Context<Env>): Promise<AuthInfo | null> {
@@ -115,8 +128,10 @@ pages.get('/dashboard', async (c) => {
   const auth = await getAuth(c);
   if (!auth) return c.redirect('/login');
 
-  const data = await loadDashboardData(c, auth, monthParam(c.req.query('month')));
-  return c.html(<DashboardView {...data} />);
+  const month = monthParam(c.req.query('month'));
+  const layout = detectLayout(c);
+  const data = await loadDashboardData(c, auth, month);
+  return c.html(<DashboardView {...data} layout={layout} />);
 });
 
 /** Statistik-Seite: Kategorien, 12-Monats-Verlauf, Top-Ausgaben. */
@@ -184,8 +199,37 @@ pages.get('/dashboard/fragments/list', async (c) => {
   // List-Fragment transportiert dann nicht beide Repräsentationen.
   const layoutParam = c.req.query('layout');
   const layout = layoutParam === 'mobile' || layoutParam === 'desktop' ? layoutParam : undefined;
-  const data = await loadListData(c, auth, monthParam(c.req.query('month')));
+  const data = await loadListData(c, auth, monthParam(c.req.query('month')), undefined, { skipMaterialize: true });
   return c.html(<TxList {...data} layout={layout} />);
+});
+
+pages.get('/dashboard/fragments/budgets', async (c) => {
+  const auth = await requireDashboardAuth(c);
+  if (auth instanceof Response) return auth;
+  const data = await loadBudgetsData(c, auth, monthParam(c.req.query('month')));
+  return c.html(<BudgetsCard {...data} />);
+});
+
+/**
+ * „Mehr laden“-Fragment: liefert nur die zusätzlichn Tagesgruppen bzw.
+ * Tabellenzeilen samt neuem Load-more-Button – der Client hängt sie an.
+ */
+pages.get('/dashboard/fragments/list-more', async (c) => {
+  const auth = await requireDashboardAuth(c);
+  if (auth instanceof Response) return auth;
+  const layout = c.req.query('layout') === 'desktop' ? 'desktop' : 'mobile';
+  const beforeDate = c.req.query('before_date') ?? '';
+  const beforeId = Number(c.req.query('before_id'));
+  if (!/^\d{4}-\d{2}-\d{2}/.test(beforeDate) || !Number.isInteger(beforeId) || beforeId <= 0) {
+    return c.json({ error: 'Ungültiger Cursor' }, 400);
+  }
+  const data = await loadListData(c, auth, monthParam(c.req.query('month')), {
+    date: beforeDate,
+    id: beforeId,
+  }, { skipMaterialize: true });
+  return c.html(
+    <TxListMore transactions={data.transactions} today={data.today} layout={layout} hasMore={data.hasMore} />,
+  );
 });
 
 /** Auth für Fragment- und Dashboard-Routen: bei Fehlen 401 JSON (Fetch) oder Redirect. */
@@ -200,98 +244,86 @@ async function requireDashboardAuth(c: Context<Env>): Promise<AuthInfo | Respons
 }
 
 /** Daten für die Kopf-Karten inkl. Aktions-Buttons (Summary-Fragment). */
-async function loadSummaryData(c: Context<Env>, auth: AuthInfo, month: string) {
+async function loadSummaryData(
+  c: Context<Env>,
+  auth: AuthInfo,
+  month: string,
+  opts: LoaderOptions = {},
+) {
   const hid = auth.hid;
   const uid = auth.uid;
   const prefix = `${month}%`;
   const currentPrefix = `${new Date().getUTCFullYear()}-${String(new Date().getUTCMonth() + 1).padStart(2, '0')}%`;
 
-  // Lazy Materialization: fällige Occurrences wiederkehrender Zahlungen erzeugen
-  await materializeRecurring(c.env.DB, hid);
+  if (!opts.skipMaterialize) {
+    await materializeRecurring(c.env.DB, hid);
+  }
 
-  // Haushalt & Mitglieder
-  const household = await c.env.DB
-    .prepare('SELECT name, invite_code FROM households WHERE id = ?1')
-    .bind(hid)
-    .first<{ name: string; invite_code: string }>();
-  const { results: members } = await c.env.DB
-    .prepare('SELECT id, name FROM users WHERE household_id = ?1 ORDER BY id')
-    .bind(hid)
-    .all<{ id: number; name: string }>();
-  const memberCount = members.length;
-
-  // Einstellungen (pro Haushalt) + eigener Monatsbeitrag
-  const { results: settingRows } = await c.env.DB
-    .prepare('SELECT key, value FROM settings WHERE household_id = ?1')
-    .bind(hid)
-    .all<{ key: string; value: string }>();
-  const settingsMap = new Map(settingRows.map((row) => [row.key, row.value]));
-  const settings = {
-    start: toNumber(settingsMap.get('joint_start_balance')),
-  };
-  const myContribution =
-    (
-      await c.env.DB.prepare('SELECT monthly_contribution FROM users WHERE id = ?1')
-        .bind(uid)
-        .first<{ monthly_contribution: number }>()
-    )?.monthly_contribution ?? 0;
-
-  // Karte 1: privater Saldo – private Einnahmen/Ausgaben, meine Beiträge, Ausgleiche
-  const privateBalance =
-    (
-      await c.env.DB.prepare(
-        `SELECT COALESCE(SUM(v), 0) AS bal FROM (
-           SELECT CASE WHEN type = 'income' THEN amount ELSE -amount END AS v
-           FROM transactions
-           WHERE user_id = ?1 AND paid_from = 'private' AND type IN ('income', 'expense')
-           UNION ALL
-           SELECT -amount AS v FROM transactions WHERE user_id = ?1 AND type = 'transfer'
-           UNION ALL
-           SELECT CASE WHEN user_id = ?1 THEN -amount ELSE amount END AS v
-           FROM transactions
-           WHERE type = 'settlement' AND (user_id = ?1 OR counterpart_id = ?1)
-         )`,
-      )
-        .bind(uid)
-        .first<{ bal: number }>()
-    )?.bal ?? 0;
-
-  // Karte 2: Gemeinschaftskonto – Startstand + Beiträge − gemeinsame Ausgaben vom Konto
-  const pot = await c.env.DB.prepare(
-    `SELECT
-       COALESCE(SUM(CASE WHEN t.type = 'transfer' THEN t.amount ELSE 0 END), 0) AS transfers,
-       COALESCE(SUM(CASE WHEN t.type = 'expense' AND t.paid_from = 'joint' THEN t.amount ELSE 0 END), 0) AS joint_expenses
-     FROM transactions t
-     WHERE t.user_id IN (SELECT id FROM users WHERE household_id = ?1)`,
-  )
-    .bind(hid)
-    .first<{ transfers: number; joint_expenses: number }>();
-  const jointPot = {
-    saldo: Math.round((settings.start + (pot?.transfers ?? 0) - (pot?.joint_expenses ?? 0)) * 100) / 100,
-    start: settings.start,
-    transfers: pot?.transfers ?? 0,
-  };
-
-  // Karte 3: gemeinsame Ausgaben im Monat, aufgeteilt nach Bezahltkonto
-  const sharedMonthRow = await c.env.DB.prepare(
-    `SELECT
-       COALESCE(SUM(CASE WHEN paid_from = 'joint' THEN amount ELSE 0 END), 0) AS from_joint,
-       COALESCE(SUM(CASE WHEN paid_from = 'private' THEN amount ELSE 0 END), 0) AS advanced
-     FROM transactions
-     WHERE scope = 'shared' AND type = 'expense' AND date LIKE ?2
-       AND user_id IN (SELECT id FROM users WHERE household_id = ?1)`,
-  )
-    .bind(hid, prefix)
-    .first<{ from_joint: number; advanced: number }>();
-  const sharedMonth = {
-    total: Math.round(((sharedMonthRow?.from_joint ?? 0) + (sharedMonthRow?.advanced ?? 0)) * 100) / 100,
-    advanced: sharedMonthRow?.advanced ?? 0,
-  };
-
-  // Karte 4: paarweise Schulden – private Vorschüsse gleicheilig 1/N umgelegt,
-  // reduziert um Ausgleichszahlungen zwischen dem Paar
-  const { results: advanceRows } = await c.env.DB
-    .prepare(
+  // Unabhängige Queries parallel – reduziert sequentielle D1-Roundtrips
+  const [
+    household,
+    membersResult,
+    settingRowsResult,
+    myContributionRow,
+    privateBalanceRow,
+    pot,
+    sharedMonthRow,
+    advanceRowsResult,
+    mySettlementsResult,
+    contributionCountRow,
+  ] = await Promise.all([
+    c.env.DB
+      .prepare('SELECT name, invite_code FROM households WHERE id = ?1')
+      .bind(hid)
+      .first<{ name: string; invite_code: string }>(),
+    c.env.DB
+      .prepare('SELECT id, name FROM users WHERE household_id = ?1 ORDER BY id')
+      .bind(hid)
+      .all<{ id: number; name: string }>(),
+    c.env.DB
+      .prepare('SELECT key, value FROM settings WHERE household_id = ?1')
+      .bind(hid)
+      .all<{ key: string; value: string }>(),
+    c.env.DB
+      .prepare('SELECT monthly_contribution FROM users WHERE id = ?1')
+      .bind(uid)
+      .first<{ monthly_contribution: number }>(),
+    c.env.DB.prepare(
+      `SELECT COALESCE(SUM(v), 0) AS bal FROM (
+         SELECT CASE WHEN type = 'income' THEN amount ELSE -amount END AS v
+         FROM transactions
+         WHERE user_id = ?1 AND paid_from = 'private' AND type IN ('income', 'expense')
+         UNION ALL
+         SELECT -amount AS v FROM transactions WHERE user_id = ?1 AND type = 'transfer'
+         UNION ALL
+         SELECT CASE WHEN user_id = ?1 THEN -amount ELSE amount END AS v
+         FROM transactions
+         WHERE type = 'settlement' AND (user_id = ?1 OR counterpart_id = ?1)
+       )`,
+    )
+      .bind(uid)
+      .first<{ bal: number }>(),
+    c.env.DB.prepare(
+      `SELECT
+         COALESCE(SUM(CASE WHEN t.type = 'transfer' THEN t.amount ELSE 0 END), 0) AS transfers,
+         COALESCE(SUM(CASE WHEN t.type = 'expense' AND t.paid_from = 'joint' THEN t.amount ELSE 0 END), 0) AS joint_expenses
+       FROM transactions t
+       JOIN users u ON u.id = t.user_id
+       WHERE u.household_id = ?1`,
+    )
+      .bind(hid)
+      .first<{ transfers: number; joint_expenses: number }>(),
+    c.env.DB.prepare(
+      `SELECT
+         COALESCE(SUM(CASE WHEN t.paid_from = 'joint' THEN t.amount ELSE 0 END), 0) AS from_joint,
+         COALESCE(SUM(CASE WHEN t.paid_from = 'private' THEN t.amount ELSE 0 END), 0) AS advanced
+       FROM transactions t
+       JOIN users u ON u.id = t.user_id
+       WHERE u.household_id = ?1 AND t.scope = 'shared' AND t.type = 'expense' AND t.date LIKE ?2`,
+    )
+      .bind(hid, prefix)
+      .first<{ from_joint: number; advanced: number }>(),
+    c.env.DB.prepare(
       `SELECT u.id, u.name, COALESCE(SUM(t.amount), 0) AS adv
        FROM users u
        LEFT JOIN transactions t
@@ -299,20 +331,47 @@ async function loadSummaryData(c: Context<Env>, auth: AuthInfo, month: string) {
        WHERE u.household_id = ?1
        GROUP BY u.id, u.name`,
     )
-    .bind(hid)
-    .all<{ id: number; name: string; adv: number }>();
+      .bind(hid)
+      .all<{ id: number; name: string; adv: number }>(),
+    c.env.DB.prepare(
+      "SELECT user_id, counterpart_id, amount FROM transactions WHERE type = 'settlement' AND (user_id = ?1 OR counterpart_id = ?1)",
+    )
+      .bind(uid)
+      .all<{ user_id: number; counterpart_id: number | null; amount: number }>(),
+    c.env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM transactions WHERE type = 'transfer' AND category = 'Beitrag' AND user_id = ?1 AND date LIKE ?2",
+    )
+      .bind(uid, currentPrefix)
+      .first<{ n: number }>(),
+  ]);
+
+  const members = membersResult.results;
+  const memberCount = members.length;
+  const settingsMap = new Map(settingRowsResult.results.map((row) => [row.key, row.value]));
+  const settings = {
+    start: toNumber(settingsMap.get('joint_start_balance')),
+  };
+  const myContribution = myContributionRow?.monthly_contribution ?? 0;
+  const privateBalance = privateBalanceRow?.bal ?? 0;
+
+  const jointPot = {
+    saldo: Math.round((settings.start + (pot?.transfers ?? 0) - (pot?.joint_expenses ?? 0)) * 100) / 100,
+    start: settings.start,
+    transfers: pot?.transfers ?? 0,
+  };
+
+  const sharedMonth = {
+    total: Math.round(((sharedMonthRow?.from_joint ?? 0) + (sharedMonthRow?.advanced ?? 0)) * 100) / 100,
+    advanced: sharedMonthRow?.advanced ?? 0,
+  };
+
+  const advanceRows = advanceRowsResult.results;
   const advByMember = new Map(advanceRows.map((row) => [row.id, row.adv]));
   const myAdvances = advByMember.get(uid) ?? 0;
 
-  const { results: mySettlements } = await c.env.DB
-    .prepare(
-      'SELECT user_id, counterpart_id, amount FROM transactions WHERE type = \'settlement\' AND (user_id = ?1 OR counterpart_id = ?1)',
-    )
-    .bind(uid)
-    .all<{ user_id: number; counterpart_id: number | null; amount: number }>();
-  const settledByMe = new Map<number, number>(); // ich habe an X gezahlt
-  const settledToMe = new Map<number, number>(); // X hat an mich gezahlt
-  for (const row of mySettlements) {
+  const settledByMe = new Map<number, number>();
+  const settledToMe = new Map<number, number>();
+  for (const row of mySettlementsResult.results) {
     if (row.user_id === uid && row.counterpart_id !== null) {
       settledByMe.set(row.counterpart_id, (settledByMe.get(row.counterpart_id) ?? 0) + row.amount);
     } else if (row.counterpart_id === uid) {
@@ -338,16 +397,8 @@ async function loadSummaryData(c: Context<Env>, auth: AuthInfo, month: string) {
   }
   debts.sort((a, b) => b.amount - a.amount);
 
-  // Schnellbutton: eigener Beitrag für den aktuellen Monat schon gebucht?
   const contributionBooked =
-    myContribution > 0 &&
-    (
-      await c.env.DB.prepare(
-        "SELECT COUNT(*) AS n FROM transactions WHERE type = 'transfer' AND category = 'Beitrag' AND user_id = ?1 AND date LIKE ?2",
-      )
-        .bind(uid, currentPrefix)
-        .first<{ n: number }>()
-    )?.n! > 0;
+    myContribution > 0 && (contributionCountRow?.n ?? 0) > 0;
 
   return {
     userName: auth.name,
@@ -363,27 +414,80 @@ async function loadSummaryData(c: Context<Env>, auth: AuthInfo, month: string) {
   };
 }
 
-/** Daten für die Transaktionsliste inkl. Monatsnavi (List-Fragment). */
-async function loadListData(c: Context<Env>, auth: AuthInfo, month: string) {
+/** Buchungen pro „Seite“ des Dashboard-Verlaufs. */
+const LIST_PAGE_SIZE = 50;
+
+/**
+ * Daten für die Transaktionsliste inkl. Monatsnavi (List-Fragment).
+ * Mit `before`-Cursor werden die nächsten LIST_PAGE_SIZE Buchungen ab dem
+ * ältesten bereits gerenderten Eintrag geliefert. Der älteste geladene Tag
+ * wird dabei immer vollständig ausgeliefert, damit „Mehr laden“ keine
+ * Tagesgruppe zerreißt.
+ */
+async function loadListData(
+  c: Context<Env>,
+  auth: AuthInfo,
+  month: string,
+  before?: { date: string; id: number },
+  opts: LoaderOptions = {},
+) {
   const hid = auth.hid;
   const prefix = `${month}%`;
 
-  // Lazy Materialization (idempotent, INSERT OR IGNORE) – auch der reine
-  // Listen-Fragment-Abruf erzeugt fällige wiederkehrende Buchungen
-  await materializeRecurring(c.env.DB, hid);
+  if (!opts.skipMaterialize) {
+    await materializeRecurring(c.env.DB, hid);
+  }
 
+  const listColumns = `t.id, u.name AS created_by, t.amount, t.type, t.category, t.description, t.date, t.scope, t.paid_from, t.recurring_id`;
   // Historie des Haushalts im gewählten Monat – persönliche Buchungen anderer
   // Mitglieder bleiben ausgeblendet, nur eigene + gemeinsame sind sichtbar
-  const { results: transactions } = await c.env.DB.prepare(
-    `SELECT t.id, u.name AS created_by, t.amount, t.type, t.category, t.description, t.date, t.scope, t.paid_from, t.recurring_id
+  const { results: page } = await c.env.DB.prepare(
+    `SELECT ${listColumns}
      FROM transactions t
      JOIN users u ON u.id = t.user_id
      WHERE u.household_id = ?1 AND t.date LIKE ?2 AND (t.scope = 'shared' OR t.user_id = ?3)
+       ${before ? 'AND (t.date < ?4 OR (t.date = ?4 AND t.id < ?5))' : ''}
      ORDER BY t.date DESC, t.id DESC
-     LIMIT 100`,
+     LIMIT ${LIST_PAGE_SIZE}`,
   )
-    .bind(hid, prefix, auth.uid)
+    .bind(hid, prefix, auth.uid, ...(before ? [before.date, before.id] : []))
     .all<DashboardTx>();
+
+  let transactions = page;
+  if (transactions.length > 0) {
+    // Rest des ältesten Tages nachladen (gleicher Filter, streng älter als
+    // der älteste bereits geladene Eintrag)
+    const oldest = transactions[transactions.length - 1];
+    const { results: dayTail } = await c.env.DB.prepare(
+      `SELECT ${listColumns}
+       FROM transactions t
+       JOIN users u ON u.id = t.user_id
+       WHERE u.household_id = ?1 AND t.date LIKE ?2 AND (t.scope = 'shared' OR t.user_id = ?3)
+         AND (t.date < ?4 OR (t.date = ?4 AND t.id < ?5))
+       ORDER BY t.date DESC, t.id DESC
+       LIMIT 200`,
+    )
+      .bind(hid, `${String(oldest.date).slice(0, 10)}%`, auth.uid, oldest.date, oldest.id)
+      .all<DashboardTx>();
+    transactions = transactions.concat(dayTail);
+  }
+
+  // Gibt es im Monat noch ältere Buchungen? (Button „Mehr laden“)
+  let hasMore = false;
+  if (transactions.length > 0) {
+    const oldest = transactions[transactions.length - 1];
+    const more = await c.env.DB
+      .prepare(
+        `SELECT EXISTS(
+           SELECT 1 FROM transactions t JOIN users u ON u.id = t.user_id
+           WHERE u.household_id = ?1 AND (t.scope = 'shared' OR t.user_id = ?2)
+             AND t.date >= ?3 AND (t.date < ?4 OR (t.date = ?4 AND t.id < ?5))
+         ) AS more`,
+      )
+      .bind(hid, auth.uid, `${month}-01`, oldest.date, oldest.id)
+      .first<{ more: number }>();
+    hasMore = (more?.more ?? 0) === 1;
+  }
 
   return {
     monthLabel: monthLabelFor(month),
@@ -391,6 +495,61 @@ async function loadListData(c: Context<Env>, auth: AuthInfo, month: string) {
     nextMonth: shiftMonth(month, 1),
     transactions,
     today: new Date().toISOString().slice(0, 10),
+    hasMore,
+  };
+}
+
+/**
+ * Daten für die Budget-Sektion: effektives Budget (monatsspezifisch, sonst
+ * Standard), Verbrauch und Rest je Kategorie. Budgets sind Haushaltsbudgets –
+ * der Verbrauch zählt daher alle Ausgaben der Kategorie im Haushalt
+ * (gemeinsame und private), als Aggregat ohne Einzelpreise anderer Mitglieder.
+ */
+async function loadBudgetsData(c: Context<Env>, auth: AuthInfo, month: string) {
+  const hid = auth.hid;
+  const prefix = `${month}%`;
+
+  const [budgetResult, spendResult] = await Promise.all([
+    c.env.DB
+      .prepare('SELECT month, category, amount FROM budgets WHERE household_id = ?1')
+      .bind(hid)
+      .all<{ month: string; category: string; amount: number }>(),
+    c.env.DB
+      .prepare(
+        `SELECT t.category AS category, COALESCE(SUM(t.amount), 0) AS spent
+         FROM transactions t
+         JOIN users u ON u.id = t.user_id
+         WHERE u.household_id = ?1 AND t.type = 'expense' AND t.date LIKE ?2
+         GROUP BY t.category`,
+      )
+      .bind(hid, prefix)
+      .all<{ category: string; spent: number }>(),
+  ]);
+
+  const spentByCategory = new Map(spendResult.results.map((row) => [row.category, row.spent]));
+  const monthBudgets: Record<string, number> = {};
+  const defaultBudgets: Record<string, number> = {};
+  for (const row of budgetResult.results) {
+    if (row.month === month) monthBudgets[row.category] = row.amount;
+    else if (row.month === 'default') defaultBudgets[row.category] = row.amount;
+  }
+
+  // Anzeigezeilen: effektives Budget = monatsspezifisch, sonst Standard-Alternative
+  const budgets = Object.keys({ ...defaultBudgets, ...monthBudgets })
+    .map((category) => {
+      const budget = monthBudgets[category] ?? defaultBudgets[category] ?? 0;
+      const spent = Math.round((spentByCategory.get(category) ?? 0) * 100) / 100;
+      return { category, budget, spent, rest: Math.round((budget - spent) * 100) / 100 };
+    })
+    .filter((row) => row.budget > 0)
+    .sort((a, b) => b.spent / b.budget - a.spent / a.budget);
+
+  return {
+    budgets,
+    monthBudgets,
+    defaultBudgets,
+    hasMonthSpecific: Object.keys(monthBudgets).length > 0,
+    monthLabel: monthLabelFor(month),
   };
 }
 
@@ -403,22 +562,9 @@ async function loadRecurringData(c: Context<Env>, hid: number, uid: number) {
     .bind(hid, uid)
     .all<RecurringRule>();
   const today = todayBerlin();
+  const skipMap = await loadSkipMap(c.env.DB, rules.filter((r) => r.active).map((r) => r.id));
 
-  const rulesWithNextDue = await Promise.all(
-    rules.map(async (rule) => {
-      if (!rule.active) return { ...rule, next_due: null };
-      const { results: skips } = await c.env.DB
-        .prepare('SELECT due_date FROM recurring_skips WHERE recurring_id = ?1')
-        .bind(rule.id)
-        .all<{ due_date: string }>();
-      return {
-        ...rule,
-        next_due: nextDueDate(rule, today, new Set(skips.map((s) => s.due_date))),
-      };
-    }),
-  );
-
-  return { rules: rulesWithNextDue, today };
+  return { rules: attachNextDue(rules, skipMap, today), today };
 }
 
 /** Daten für die Statistik-Seite. */
@@ -430,7 +576,13 @@ async function loadStatsData(c: Context<Env>, auth: AuthInfo, month: string) {
 
   await materializeRecurring(c.env.DB, hid);
 
-  const [household, categorySplitResult, historyResult, topResult, membersResult] = await Promise.all([
+  const memberCountRow = await c.env.DB
+    .prepare('SELECT COUNT(*) AS n FROM users WHERE household_id = ?1')
+    .bind(hid)
+    .first<{ n: number }>();
+  const memberCount = Math.max(memberCountRow?.n ?? 1, 1);
+
+  const [household, categorySplitResult, historyResult, topResult] = await Promise.all([
     c.env.DB
       .prepare('SELECT name FROM households WHERE id = ?1')
       .bind(hid)
@@ -463,39 +615,27 @@ async function loadStatsData(c: Context<Env>, auth: AuthInfo, month: string) {
       .all<{ ym: string; own_income: number; shared_income: number; own_expense: number; shared_expense: number }>(),
     c.env.DB
       .prepare(
-        // Kein ORDER BY hier: Ranking erfolgt erst unten nach dem eigenen Anteil
-        // (voller Betrag bei persönlich, Betrag/memberCount bei gemeinsam).
-        `SELECT t.description, t.category, t.amount, t.date, t.scope, u.name AS created_by
+        `SELECT t.description, t.category, t.amount, t.date, t.scope, u.name AS created_by,
+                ROUND(CASE WHEN t.scope = 'shared' THEN t.amount / ?4 ELSE t.amount END, 2) AS share_amount
          FROM transactions t
          JOIN users u ON u.id = t.user_id
          WHERE u.household_id = ?1 AND t.type = 'expense' AND t.date LIKE ?2 AND (t.scope = 'shared' OR t.user_id = ?3)
-         LIMIT 500`,
+         ORDER BY share_amount DESC
+         LIMIT 10`,
       )
-      .bind(hid, prefix, auth.uid)
-      .all<{ description: string; category: string; amount: number; date: string; scope: 'personal' | 'shared'; created_by: string }>(),
-    c.env.DB
-      .prepare('SELECT id, name FROM users WHERE household_id = ?1 ORDER BY id')
-      .bind(hid)
-      .all<{ id: number; name: string }>(),
+      .bind(hid, prefix, auth.uid, memberCount)
+      .all<{ description: string; category: string; amount: number; date: string; scope: 'personal' | 'shared'; created_by: string; share_amount: number }>(),
   ]);
   const historyRows = historyResult.results;
 
-  const memberCount = Math.max(membersResult.results.length, 1);
-
-  // Top-Ausgaben: konsequent auf den eigenen Anteil umgestellt – bei gemeinsamen
-  // Ausgaben zählt (wie überall sonst auf der Seite) 1/N des Betrags, nicht die
-  // volle Buchung. Ranking und Anzeige beziehen sich beide auf diesen Anteil.
-  const topExpenses = topResult.results
-    .map((row) => ({
-      description: row.description,
-      category: row.category,
-      date: row.date,
-      scope: row.scope,
-      created_by: row.created_by,
-      amount: Math.round((row.scope === 'shared' ? row.amount / memberCount : row.amount) * 100) / 100,
-    }))
-    .sort((a, b) => b.amount - a.amount)
-    .slice(0, 10);
+  const topExpenses = topResult.results.map((row) => ({
+    description: row.description,
+    category: row.category,
+    date: row.date,
+    scope: row.scope,
+    created_by: row.created_by,
+    amount: row.share_amount,
+  }));
 
   // Lücken im 6-Monats-Fenster mit 0 auffüllen (für die Balken-X-Achse); Pro-Kopf-Sicht
   // wie bei den Kategorien: eigene Beträge voll, gemeinsame 1/N auf alle Mitglieder verteilt
@@ -548,15 +688,19 @@ function monthLabelFor(month: string): string {
 
 /** Kompletter Dashboard-Datensatz für die ganzseitige Ansicht. */
 async function loadDashboardData(c: Context<Env>, auth: AuthInfo, month: string) {
-  const [summary, list, recurringCount] = await Promise.all([
-    loadSummaryData(c, auth, month),
-    loadListData(c, auth, month),
+  await materializeRecurring(c.env.DB, auth.hid);
+  const opts: LoaderOptions = { skipMaterialize: true };
+
+  const [summary, list, budgetsData, recurringCount] = await Promise.all([
+    loadSummaryData(c, auth, month, opts),
+    loadListData(c, auth, month, undefined, opts),
+    loadBudgetsData(c, auth, month),
     c.env.DB
       .prepare('SELECT COUNT(*) AS n FROM recurring_rules WHERE household_id = ?1')
       .bind(auth.hid)
       .first<{ n: number }>(),
   ]);
-  return { ...summary, ...list, recurringCount: recurringCount?.n ?? 0, month };
+  return { ...summary, ...list, ...budgetsData, recurringCount: recurringCount?.n ?? 0, month };
 }
 
 export default pages;

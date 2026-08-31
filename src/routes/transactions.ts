@@ -9,6 +9,68 @@ const transactions = new Hono<Env>();
 transactions.use('/api/transactions', requireAuth);
 transactions.use('/api/transactions/:id', requireAuth);
 transactions.use('/api/transactions/:id/make-recurring', requireAuth);
+transactions.use('/api/export.csv', requireAuth);
+
+/**
+ * CSV-Export aller Buchungen des Haushalts (Datensicherung/Steuer).
+ * Deutsch-Excel-tauglich: Semikolon-Trenner, Kommabeträge, UTF-8-BOM, CRLF.
+ */
+transactions.get('/api/export.csv', async (c) => {
+  const householdId = c.get('householdId');
+  const { results } = await c.env.DB
+    .prepare(
+      `SELECT t.id, t.date, t.type, t.scope, t.paid_from, t.category, t.description,
+              t.amount, u.name AS created_by, t.recurring_id
+       FROM transactions t
+       JOIN users u ON u.id = t.user_id
+       WHERE u.household_id = ?1
+       ORDER BY t.date ASC, t.id ASC
+       LIMIT 20000`,
+    )
+    .bind(householdId)
+    .all<{
+      id: number;
+      date: string;
+      type: string;
+      scope: string;
+      paid_from: string;
+      category: string;
+      description: string;
+      amount: number;
+      created_by: string;
+      recurring_id: number | null;
+    }>();
+
+  const escape = (value: string | number | null): string => {
+    const s = value === null ? '' : String(value);
+    return /[";\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const header = 'Datum;Art;Bereich;Konto;Kategorie;Beschreibung;Betrag;Erstellt von;Regel-ID';
+  const lines = results.map((r) =>
+    [
+      r.date,
+      r.type,
+      r.scope,
+      r.paid_from,
+      r.category,
+      r.description,
+      r.amount.toFixed(2).replace('.', ','),
+      r.created_by,
+      r.recurring_id === null ? '' : String(r.recurring_id),
+    ]
+      .map(escape)
+      .join(';'),
+  );
+  const csv = '\uFEFF' + header + '\r\n' + lines.join('\r\n') + '\r\n';
+
+  const filename = `smartwallet-${new Date().toISOString().slice(0, 10)}.csv`;
+  return new Response(csv, {
+    headers: {
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+    },
+  });
+});
 
 transactions.get('/api/transactions', async (c) => {
   const month = c.req.query('month'); // optional: "YYYY-MM"

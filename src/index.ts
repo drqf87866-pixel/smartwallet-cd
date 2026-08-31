@@ -171,8 +171,11 @@ export default {
     const { results: households } = await env.DB
       .prepare('SELECT id FROM households')
       .all<{ id: number }>();
-    for (const household of households) {
-      await materializeRecurring(env.DB, household.id);
+    const CONCURRENCY = 5;
+    for (let i = 0; i < households.length; i += CONCURRENCY) {
+      await Promise.all(
+        households.slice(i, i + CONCURRENCY).map((household) => materializeRecurring(env.DB, household.id)),
+      );
     }
   },
 };

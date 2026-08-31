@@ -51,11 +51,23 @@ function timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean {
   return diff === 0;
 }
 
+/**
+ * Verifiziert ein Passwort gegen einen gespeicherten Hash. Kaputte/korrupte
+ * Hash-Werte (z. B. manipulierte DB-Zeile) liefern false statt einer Exception.
+ */
 export async function verifyPassword(password: string, stored: string): Promise<boolean> {
   const [scheme, iterations, saltB64, hashB64] = stored.split('$');
   if (scheme !== 'pbkdf2' || Number(iterations) !== ITERATIONS || !saltB64 || !hashB64) {
     return false;
   }
-  const computed = await deriveBits(password, fromBase64(saltB64));
-  return timingSafeEqual(computed, fromBase64(hashB64));
+  let salt: Uint8Array;
+  let expected: Uint8Array;
+  try {
+    salt = fromBase64(saltB64);
+    expected = fromBase64(hashB64);
+  } catch {
+    return false;
+  }
+  const computed = await deriveBits(password, salt);
+  return timingSafeEqual(computed, expected);
 }

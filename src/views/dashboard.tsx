@@ -1,7 +1,8 @@
 import type { FC } from 'hono/jsx';
 import type { TransactionAccount, TransactionScope, TransactionType } from '../types';
+import { EXPENSE_CATEGORIES } from '../lib/categories';
 import { Layout } from './layout';
-import { BottomNav, CategorySelect, FREQUENCY_OPTIONS, INPUT_CLASS, LABEL_CLASS, MagicSheet, UserChip } from './shared';
+import { BottomNav, CategoryGlobals, CategorySelect, FREQUENCY_OPTIONS, INPUT_CLASS, LABEL_CLASS, MagicSheet, UserChip } from './shared';
 import { fmt, fmtDay, fmtTime } from '../lib/format';
 
 export type DashboardTx = {
@@ -45,14 +46,38 @@ export type TxListProps = {
   nextMonth: string;
   transactions: DashboardTx[];
   today: string;
+  /** Ältere Buchungen im Monat vorhanden → „Mehr laden“-Button anzeigen. */
+  hasMore: boolean;
 };
 
-export type DashboardProps = SummaryCardsProps & TxListProps & {
+/** Budget-Zeile: effektives Budget (monatsspezifisch, sonst Standard) + Verbrauch. */
+export type BudgetRow = {
+  category: string;
+  budget: number;
+  spent: number;
+  rest: number;
+};
+
+/** Budget-Sektion inkl. Verwaltungs-Overlay – Fragment. */
+export type BudgetsProps = {
+  budgets: BudgetRow[];
+  monthLabel: string;
+  /** Monatsspezifische Budgets (Kategorie → Betrag) – Vorbefüllung des Overlays. */
+  monthBudgets: Record<string, number>;
+  /** Standard-Budgets für jeden Monat (Kategorie → Betrag). */
+  defaultBudgets: Record<string, number>;
+  /** Mindestens ein monatsspezifisches Budget vorhanden → Overlay startet im Monatsmodus. */
+  hasMonthSpecific: boolean;
+};
+
+export type DashboardProps = SummaryCardsProps & TxListProps & BudgetsProps & {
   userName: string;
   householdName: string;
   month: string;
   /** Anzahl wiederkehrender Regeln – Label des Einstiegs-Buttons auf die /recurring-Seite. */
   recurringCount: number;
+  /** SSR-Layout: nur eine Transaktions-Repräsentation rendern (Mobile oder Desktop). */
+  layout?: 'mobile' | 'desktop';
 };
 
 const BADGE_STYLES = {
@@ -82,6 +107,16 @@ const amountSign = (t: DashboardTx) =>
 const isEditable = (t: DashboardTx) => t.type !== 'settlement' && t.category !== 'Beitrag';
 /** Nur normale Ausgaben/Einnahmen, die noch keiner Regel angehören, lassen sich wiederkehrend einrichten. */
 const canMakeRecurring = (t: DashboardTx) => isEditable(t) && !t.recurring_id && t.type !== 'transfer';
+
+/** Einmal serialisierte TX-Map statt JSON pro Button – kleineres HTML. */
+const TxCacheScript: FC<{ transactions: DashboardTx[] }> = ({ transactions }) => {
+  if (transactions.length === 0) return null;
+  const map: Record<number, DashboardTx> = {};
+  for (const t of transactions) map[t.id] = t;
+  return (
+    <script type="application/json" data-tx-cache dangerouslySetInnerHTML={{ __html: JSON.stringify(map) }} />
+  );
+};
 
 /** Schulden-Zeilen inkl. begleichen-Button – von Mobile- und Desktop-Ansicht geteilt. */
 const DebtRows: FC<{ debts: DebtRow[] }> = ({ debts }) => (
@@ -261,6 +296,151 @@ export const SummaryCards: FC<SummaryCardsProps> = ({
   );
 };
 
+/* ------------------------------------------------------------------ */
+/* Budgets: Fortschritts-Karten + Verwaltungs-Overlay                  */
+/* ------------------------------------------------------------------ */
+
+const budgetBarColor = (row: BudgetRow): string =>
+  row.rest < 0 ? 'bg-red-500' : row.spent / row.budget >= 0.75 ? 'bg-amber-500' : 'bg-emerald-500';
+const budgetValueColor = (row: BudgetRow): string =>
+  row.rest < 0 ? 'text-red-600' : row.spent / row.budget >= 0.75 ? 'text-amber-600' : 'text-emerald-700';
+
+/**
+ * Budget-Sektion – Übersicht mit Fortschrittsbalken (Fragment) samt
+ * Verwaltungs-Overlay. Das Overlay liegt im Fragment, damit ein Refresh
+ * die Vorbefüllung automatisch aktualisiert.
+ */
+export const BudgetsCard: FC<BudgetsProps> = ({
+  budgets,
+  monthLabel,
+  monthBudgets,
+  defaultBudgets,
+  hasMonthSpecific,
+}) => {
+  const scope = hasMonthSpecific ? 'month' : 'default';
+  const valueFor = (category: string): string =>
+    String((scope === 'month' ? monthBudgets[category] : defaultBudgets[category]) ?? '');
+
+  return (
+    <>
+      <section class="card">
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <h2 class="text-sm font-medium text-slate-500">Budgets · {monthLabel}</h2>
+            <p class="mt-0.5 text-xs text-slate-500">Wie viel pro Kategorie noch übrig ist.</p>
+          </div>
+          <button type="button" data-action="open-budgets" class="btn-secondary shrink-0 !py-2 text-sm">
+            Verwalten
+          </button>
+        </div>
+
+        {budgets.length === 0 ? (
+          <p class="mt-4 rounded-xl bg-slate-50 px-4 py-3 text-sm leading-snug text-slate-500">
+            Noch keine Budgets festgelegt. Lege Monatslimits je Kategorie fest, um größere Ausgaben im
+            Blick zu behalten.
+          </p>
+        ) : (
+          <ul class="mt-4 space-y-3">
+            {budgets.map((b) => {
+              const pct = Math.min(100, Math.round((b.spent / b.budget) * 100));
+              return (
+                <li>
+                  <div class="mb-1 flex items-baseline justify-between gap-2 text-sm">
+                    <span class="min-w-0 truncate font-medium text-slate-700">{b.category}</span>
+                    <span class={'shrink-0 tabular-nums ' + budgetValueColor(b)}>
+                      {fmt(b.spent)} / {fmt(b.budget)}
+                    </span>
+                  </div>
+                  <div
+                    class="h-2 overflow-hidden rounded-full bg-slate-100"
+                    role="progressbar"
+                    aria-valuenow={pct}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-label={`Budget ${b.category}: ${pct}% verbraucht`}
+                  >
+                    <div class={'h-full rounded-full ' + budgetBarColor(b)} style={`width:${pct}%`}></div>
+                  </div>
+                  <p class={'mt-1 text-xs ' + (b.rest < 0 ? 'text-red-600' : 'text-slate-500')}>
+                    {b.rest < 0 ? `${fmt(Math.abs(b.rest))} über Budget` : `noch ${fmt(b.rest)} übrig`}
+                  </p>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+
+      {/* Verwaltungs-Overlay: Geltungsbereich wählen, Werte je Kategorie pflegen */}
+      <div id="budgets-overlay" class="fixed inset-0 z-50 hidden">
+        <div class="absolute inset-0 bg-slate-900/40" data-close="budgets-overlay"></div>
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="budgets-title"
+          class="safe-bottom absolute inset-x-0 bottom-0 max-h-[88vh] overflow-y-auto rounded-t-2xl bg-white p-5 shadow-xl sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:w-[30rem] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl"
+        >
+          <div class="mx-auto mb-4 h-1.5 w-10 rounded-full bg-slate-200 sm:hidden" aria-hidden="true"></div>
+          <div class="mb-3 flex items-start justify-between">
+            <h2 id="budgets-title" class="text-base font-semibold text-slate-800">Budgets verwalten</h2>
+            <button
+              type="button"
+              data-close="budgets-overlay"
+              aria-label="Budgets-Dialog schließen"
+              class="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-500"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" class="h-5 w-5" aria-hidden="true">
+                <path d="M6 6l12 12M18 6L6 18" />
+              </svg>
+            </button>
+          </div>
+
+          <form id="budgets-form" class="grid gap-3">
+            <label class="block">
+              <span class={LABEL_CLASS}>Gilt für</span>
+              <select id="budgets-scope" class={INPUT_CLASS}>
+                <option value="default" selected={scope === 'default'}>Jeden Monat (Standard)</option>
+                <option value="month" selected={scope === 'month'}>Nur {monthLabel}</option>
+              </select>
+            </label>
+            <p class="text-xs leading-snug text-slate-500">
+              Leeres Feld = kein Budget. Ein geleertes Feld löscht das Budget im gewählten Geltungsbereich.
+            </p>
+            <div class="grid gap-x-3 gap-y-2 sm:grid-cols-2">
+              {EXPENSE_CATEGORIES.map((category) => (
+                <label class="flex items-center gap-2">
+                  <span class="w-24 shrink-0 truncate text-xs text-slate-500">{category}</span>
+                  <input
+                    type="number"
+                    inputmode="decimal"
+                    step="0.01"
+                    min="0"
+                    autocomplete="off"
+                    placeholder="kein Budget"
+                    class={INPUT_CLASS + ' !px-2.5 !py-1.5 text-sm'}
+                    data-category={category}
+                    data-default={String(defaultBudgets[category] ?? '')}
+                    data-month={String(monthBudgets[category] ?? '')}
+                    value={valueFor(category)}
+                  />
+                </label>
+              ))}
+            </div>
+            <div class="flex gap-2">
+              <button type="submit" class="btn-primary flex-1">
+                Budgets speichern
+              </button>
+              <button type="button" data-close="budgets-overlay" class="btn-secondary">
+                Abbrechen
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </>
+  );
+};
+
 const TxRow: FC<{ t: DashboardTx }> = ({ t }) => {
   const badge = accountBadge(t);
   const editable = isEditable(t);
@@ -301,7 +481,7 @@ const TxRow: FC<{ t: DashboardTx }> = ({ t }) => {
             <button
               type="button"
               data-edit
-              data-tx={JSON.stringify(t)}
+              data-tx-id={t.id}
               title="Bearbeiten"
               aria-label="Transaktion bearbeiten"
               class="h-8 w-8 rounded border border-indigo-200 bg-indigo-50 text-sm font-medium text-indigo-600 hover:bg-indigo-100"
@@ -312,7 +492,7 @@ const TxRow: FC<{ t: DashboardTx }> = ({ t }) => {
               <button
                 type="button"
                 data-make-recurring
-                data-tx={JSON.stringify(t)}
+                data-tx-id={t.id}
                 title="Wiederkehrend einrichten"
                 aria-label="Als wiederkehrende Zahlung einrichten"
                 class="ml-1.5 h-8 w-8 rounded border border-violet-200 bg-violet-50 text-sm font-medium text-violet-700 hover:bg-violet-100"
@@ -356,6 +536,37 @@ function dayLabel(key: string, today: string): string {
   return fmtDay(key + 'T12:00:00Z');
 }
 
+/** Mobil: nach Tagen gruppierte Karten – von Liste und „Mehr laden“-Fragment geteilt. */
+const TxDayGroups: FC<{ transactions: DashboardTx[]; today: string }> = ({ transactions, today }) => (
+  <>
+    {groupByDay(transactions).map((g) => (
+      <div key={g.key}>
+        <p class="pt-3 text-xs font-semibold uppercase tracking-wide text-slate-400">{dayLabel(g.key, today)}</p>
+        <ul class="divide-y divide-slate-100">
+          {g.items.map((t) => (
+            <TxCard t={t} />
+          ))}
+        </ul>
+      </div>
+    ))}
+  </>
+);
+
+/** „Mehr laden“-Button samt Wrapper – der Client ersetzt ihn beim Nachladen. */
+const LoadMoreButton: FC<{ date: string; id: number }> = ({ date, id }) => (
+  <div class="mt-4 flex justify-center" data-load-more-wrap>
+    <button
+      type="button"
+      data-load-more
+      data-before-date={String(date)}
+      data-before-id={String(id)}
+      class="flex min-h-[48px] items-center rounded-full border border-slate-200 bg-white px-6 text-sm font-semibold text-indigo-600 shadow-sm transition active:scale-95"
+    >
+      Mehr laden
+    </button>
+  </div>
+);
+
 /** Mobile Transaktionskarte – Tippen auf „⋯“ öffnet die Aktions-Liste (Daumenzone). */
 const TxCard: FC<{ t: DashboardTx }> = ({ t }) => {
   const badge = accountBadge(t);
@@ -385,7 +596,7 @@ const TxCard: FC<{ t: DashboardTx }> = ({ t }) => {
         <button
           type="button"
           data-card-menu
-          data-tx={JSON.stringify(t)}
+          data-tx-id={t.id}
           aria-label="Transaktion bearbeiten oder löschen"
           class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-400 transition active:bg-slate-100"
         >
@@ -405,9 +616,42 @@ const TxCard: FC<{ t: DashboardTx }> = ({ t }) => {
 };
 
 /**
+ * „Mehr laden“-Fragment: nur die zusätzlichen Tagesgruppen (mobil) bzw.
+ * Tabellenzeilen (Desktop) plus der nächste Button. Desktop-Zeilen stecken
+ * in einer vollständigen Tabelle, damit sie beim innerHTML-Parsen nicht
+ * vom Browser entfernt werden.
+ */
+export const TxListMore: FC<{
+  transactions: DashboardTx[];
+  today: string;
+  layout: 'mobile' | 'desktop';
+  hasMore: boolean;
+}> = ({ transactions, today, layout, hasMore }) => {
+  const last = transactions[transactions.length - 1];
+  return (
+    <>
+      {layout === 'desktop' ? (
+        <table>
+          <tbody data-more-items>
+            {transactions.map((t) => (
+              <TxRow t={t} />
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <div data-more-items>
+          <TxDayGroups transactions={transactions} today={today} />
+        </div>
+      )}
+      {hasMore && last ? <LoadMoreButton date={String(last.date)} id={last.id} /> : null}
+      <TxCacheScript transactions={transactions} />
+    </>
+  );
+};
+
+/**
  * Transaktionssektion. `layout` steuert, welche Repräsentation gerendert
- * wird: undefined (ganzseitige Ansicht) rendert beide (CSS-gesteuert),
- * 'mobile'/'desktop' nur eine – für das List-Fragment.
+ * wird: 'mobile' oder 'desktop' – nur eine Variante pro Request.
  */
 export const TxList: FC<TxListProps & { layout?: 'mobile' | 'desktop' }> = ({
   monthLabel,
@@ -415,9 +659,9 @@ export const TxList: FC<TxListProps & { layout?: 'mobile' | 'desktop' }> = ({
   nextMonth,
   transactions,
   today,
-  layout,
+  hasMore,
+  layout = 'mobile',
 }) => {
-  const groups = groupByDay(transactions);
   return (
     <section>
       {/* Monats-Steuerung – oben kompakt (Desktop), unten als Daumenzonen-Bar (Mobile) */}
@@ -493,17 +737,11 @@ export const TxList: FC<TxListProps & { layout?: 'mobile' | 'desktop' }> = ({
           {/* Mobile: nach Tagen gruppierte Kartenliste */}
           {layout !== 'desktop' ? (
             <div class="md:hidden">
-              <div class="divide-y divide-slate-100 rounded-2xl bg-white px-4 shadow-sm ring-1 ring-slate-200">
-                {groups.map((g) => (
-                  <div key={g.key}>
-                    <p class="pt-3 text-xs font-semibold uppercase tracking-wide text-slate-400">{dayLabel(g.key, today)}</p>
-                    <ul class="divide-y divide-slate-100">
-                      {g.items.map((t) => (
-                        <TxCard t={t} />
-                      ))}
-                    </ul>
-                  </div>
-                ))}
+              <div
+                class="divide-y divide-slate-100 rounded-2xl bg-white px-4 shadow-sm ring-1 ring-slate-200"
+                data-tx-list-mobile
+              >
+                <TxDayGroups transactions={transactions} today={today} />
               </div>
             </div>
           ) : null}
@@ -523,13 +761,20 @@ export const TxList: FC<TxListProps & { layout?: 'mobile' | 'desktop' }> = ({
                     <th scope="col" class="py-2 pl-3 text-right font-medium">Aktionen</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody data-tx-list-desktop>
                   {transactions.map((t) => (
                     <TxRow t={t} />
                   ))}
                 </tbody>
               </table>
             </div>
+          ) : null}
+
+          {hasMore && transactions.length > 0 ? (
+            <LoadMoreButton
+              date={String(transactions[transactions.length - 1].date)}
+              id={transactions[transactions.length - 1].id}
+            />
           ) : null}
         </>
       )}
@@ -564,6 +809,7 @@ export const TxList: FC<TxListProps & { layout?: 'mobile' | 'desktop' }> = ({
           </svg>
         </a>
       </nav>
+      <TxCacheScript transactions={transactions} />
     </section>
   );
 };
@@ -575,6 +821,23 @@ export const TxList: FC<TxListProps & { layout?: 'mobile' | 'desktop' }> = ({
 const script = `
 window.__swInit = window.__swInit || [];
 window.__swInit.push(function () {
+// --- Transaktions-Lookup aus einmaliger __TX-Map statt JSON pro Button ---
+function txById(id) {
+  return window.__TX && window.__TX[id] ? window.__TX[id] : null;
+}
+function txFromEl(el) {
+  var id = el.getAttribute('data-tx-id');
+  return id ? txById(id) : null;
+}
+function mergeTxCache(root) {
+  var el = (root || document).querySelector('[data-tx-cache]');
+  if (!el) return;
+  try {
+    window.__TX = Object.assign(window.__TX || {}, JSON.parse(el.textContent));
+  } catch (e) {}
+}
+mergeTxCache(document);
+
 // --- Ausgleichsformular: Empfänger-Auswahl ohne den Zahlenden ---
 function rebuildRecipientOptions() {
   var from = $('s-from').value;
@@ -633,9 +896,27 @@ function updateManualPreview() {
   updatePreview('m-', window.__MEMBERS || 1);
 }
 
+// --- Budgets verwalten: Felder je Geltungsbereich umschalten ----------------
+// Originalwerte hängen als data-Attribute am Feld; gespeichert werden nur
+// Änderungen, ein geleertes Feld löscht das Budget (amount 0).
+function budgetsScope() {
+  var select = $('budgets-scope');
+  return select ? select.value : 'default';
+}
+
+function budgetsFill() {
+  var scope = budgetsScope();
+  var attr = scope === 'month' ? 'data-month' : 'data-default';
+  var inputs = document.querySelectorAll('#budgets-form input[data-category]');
+  Array.prototype.forEach.call(inputs, function (input) {
+    input.value = input.getAttribute(attr) || '';
+  });
+}
+
 document.addEventListener('change', function (e) {
   if (!e.target) return;
   if (e.target.id === 's-from') rebuildRecipientOptions();
+  if (e.target.id === 'budgets-scope') budgetsFill();
   if (/^(m|e)-type$/.test(e.target.id)) {
     var prefix = e.target.id.slice(0, e.target.id.indexOf('type'));
     syncCategoryOptions(prefix, '');
@@ -655,6 +936,7 @@ async function refreshDashboard() {
   var month = window.__MONTH;
   if (!month || !$('summary-frag') || !$('tx-frag')) return false;
   var frags = [$('summary-frag'), $('tx-frag')];
+  if ($('budgets-frag')) frags.push($('budgets-frag'));
   frags.forEach(function (f) {
     f.setAttribute('aria-busy', 'true');
     f.classList.add('opacity-50', 'pointer-events-none', 'transition-opacity');
@@ -664,9 +946,14 @@ async function refreshDashboard() {
       fetchFragment('/dashboard/fragments/summary?month=' + month),
       fetchFragment('/dashboard/fragments/list?month=' + month +
         '&layout=' + (window.matchMedia('(min-width: 768px)').matches ? 'desktop' : 'mobile')),
+      $('budgets-frag')
+        ? fetchFragment('/dashboard/fragments/budgets?month=' + month)
+        : Promise.resolve(null),
     ]);
     $('summary-frag').innerHTML = parts[0];
     $('tx-frag').innerHTML = parts[1];
+    if (parts[2] !== null && $('budgets-frag')) $('budgets-frag').innerHTML = parts[2];
+    mergeTxCache($('tx-frag'));
     syncAllCategoryOptions();
     swApplyDefaults('m-');
     updateManualPreview();
@@ -696,6 +983,14 @@ document.addEventListener('click', async function (e) {
       setTimeout(function () { $('s-amount').focus(); }, 150);
       return;
     }
+    if (name === 'open-budgets') {
+      openSheet('budgets-overlay');
+      setTimeout(function () {
+        var first = document.querySelector('#budgets-form input[data-category]');
+        if (first) first.focus();
+      }, 150);
+      return;
+    }
     if (name === 'contribution') {
       var unbusy = busy(action);
       try {
@@ -723,16 +1018,54 @@ document.addEventListener('click', async function (e) {
     return;
   }
 
+  var more = e.target.closest('[data-load-more]');
+  if (more) {
+    var moreLayout = window.matchMedia('(min-width: 768px)').matches ? 'desktop' : 'mobile';
+    var unbusyMore = busy(more, 'Lade …');
+    try {
+      var html = await fetchFragment('/dashboard/fragments/list-more?month=' + window.__MONTH +
+        '&layout=' + moreLayout +
+        '&before_date=' + encodeURIComponent(more.getAttribute('data-before-date')) +
+        '&before_id=' + encodeURIComponent(more.getAttribute('data-before-id')));
+      var tmp = document.createElement('div');
+      tmp.innerHTML = html;
+      var moreItems = tmp.querySelector('[data-more-items]');
+      var target = document.querySelector(
+        moreLayout === 'desktop' ? '[data-tx-list-desktop]' : '[data-tx-list-mobile]'
+      );
+      if (moreItems && target) target.insertAdjacentHTML('beforeend', moreItems.innerHTML);
+      mergeTxCache(tmp);
+      // Cursor auch auf den Button der anderen Layout-Variante anwenden,
+      // damit ein Layout-Wechsel (Resize) nichts doppelt nachlädt
+      var newWrap = tmp.querySelector('[data-load-more-wrap]');
+      var newBtn = newWrap ? newWrap.querySelector('[data-load-more]') : null;
+      Array.prototype.forEach.call(document.querySelectorAll('[data-load-more]'), function (btn) {
+        if (newBtn) {
+          btn.setAttribute('data-before-date', newBtn.getAttribute('data-before-date'));
+          btn.setAttribute('data-before-id', newBtn.getAttribute('data-before-id'));
+        }
+      });
+      var wrap = more.closest('[data-load-more-wrap]');
+      if (newWrap) wrap.replaceWith(newWrap);
+      else if (wrap) wrap.remove();
+    } catch (err) {
+      showToast(err.message, 'error');
+      unbusyMore();
+    }
+    return;
+  }
+
   var menu = e.target.closest('[data-card-menu]');
   if (menu) {
-    var tx = JSON.parse(menu.getAttribute('data-tx'));
+    var tx = txFromEl(menu);
+    if (!tx) return;
     // Bearbeiten-/Wiederkehrend-/Löschen-Button des Aktions-Sheets mit den echten Werten füllen
     var editSheetBtn = document.querySelector('#card-actions-overlay [data-edit]');
     var mrSheetBtn = document.querySelector('#card-actions-overlay [data-make-recurring]');
     var delSheetBtn = document.querySelector('#card-actions-overlay [data-delete]');
-    if (editSheetBtn) editSheetBtn.setAttribute('data-tx', JSON.stringify(tx));
+    if (editSheetBtn) editSheetBtn.setAttribute('data-tx-id', tx.id);
     if (mrSheetBtn) {
-      mrSheetBtn.setAttribute('data-tx', JSON.stringify(tx));
+      mrSheetBtn.setAttribute('data-tx-id', tx.id);
       mrSheetBtn.classList.toggle('hidden', !(tx.type !== 'transfer' && !tx.recurring_id));
     }
     if (delSheetBtn) delSheetBtn.setAttribute('data-delete', tx.id);
@@ -742,14 +1075,18 @@ document.addEventListener('click', async function (e) {
 
   var editBtn = e.target.closest('[data-edit]');
   if (editBtn) {
-    openEditModal(JSON.parse(editBtn.getAttribute('data-tx')));
+    var editTx = txFromEl(editBtn);
+    if (!editTx) return;
+    openEditModal(editTx);
     return;
   }
 
   var mrBtn = e.target.closest('[data-make-recurring]');
   if (mrBtn) {
+    var mrTx = txFromEl(mrBtn);
+    if (!mrTx) return;
     closeSheet('card-actions-overlay');
-    openMakeRecurringModal(JSON.parse(mrBtn.getAttribute('data-tx')));
+    openMakeRecurringModal(mrTx);
     return;
   }
 
@@ -849,6 +1186,52 @@ document.addEventListener('submit', async function (e) {
     return;
   }
 
+  if (form.id === 'budgets-form') {
+    e.preventDefault();
+    var scope = budgetsScope();
+    var monthParam = scope === 'month' ? window.__MONTH : 'default';
+    var inputs = form.querySelectorAll('input[data-category]');
+    var changes = [];
+    var invalid = null;
+    Array.prototype.forEach.call(inputs, function (input) {
+      if (invalid) return;
+      var original = input.getAttribute(scope === 'month' ? 'data-month' : 'data-default') || '';
+      var raw = input.value.trim();
+      if (raw === original) return;
+      if (raw === '') {
+        changes.push({ month: monthParam, category: input.getAttribute('data-category'), amount: 0 });
+        return;
+      }
+      var amount = parseFloat(raw.replace(',', '.'));
+      if (isNaN(amount) || amount <= 0) {
+        invalid = input;
+        return;
+      }
+      changes.push({ month: monthParam, category: input.getAttribute('data-category'), amount: amount });
+    });
+    if (invalid) {
+      markInvalid(invalid);
+      showToast('Bitte gültige Beträge eingeben (z. B. 150 oder 149,90)', 'error');
+      return;
+    }
+    if (changes.length === 0) {
+      closeSheet('budgets-overlay');
+      return;
+    }
+    var unbusy = busy(btn);
+    try {
+      await postJson('/api/budgets/batch', { changes: changes }, 'PUT');
+      closeSheet('budgets-overlay');
+      showToast('Budgets gespeichert ✓', 'ok');
+      await afterMutation(refreshDashboard);
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      unbusy();
+    }
+    return;
+  }
+
   if (form.id === 'edit-form') {
     e.preventDefault();
     if (!EDITING_ID) return;
@@ -902,7 +1285,13 @@ export const DashboardView: FC<DashboardProps> = ({
   contributionBooked,
   transactions,
   today,
+  hasMore,
   recurringCount,
+  budgets,
+  monthBudgets,
+  defaultBudgets,
+  hasMonthSpecific,
+  layout = 'mobile',
 }) => {
   const others = members.filter((m) => m.name !== userName);
   const recipientOptions: { id: number | 'me' | 'joint'; name: string }[] = [
@@ -914,6 +1303,7 @@ export const DashboardView: FC<DashboardProps> = ({
 
   return (
     <Layout title="Dashboard">
+      <CategoryGlobals />
       <main class="mx-auto max-w-6xl px-4 pb-44 pt-4 sm:px-8 md:pb-8">
         {/* Schlanker Kontext-Kopf: kein Brand, nur Monat (Content-First) */}
         <header class="mb-4 md:hidden">
@@ -960,10 +1350,20 @@ export const DashboardView: FC<DashboardProps> = ({
           />
         </div>
 
+        <div id="budgets-frag" class="mb-4 md:mb-6">
+          <BudgetsCard
+            budgets={budgets}
+            monthLabel={monthLabel}
+            monthBudgets={monthBudgets}
+            defaultBudgets={defaultBudgets}
+            hasMonthSpecific={hasMonthSpecific}
+          />
+        </div>
+
         <MagicSheet />
 
         <div id="tx-frag">
-          <TxList monthLabel={monthLabel} prevMonth={prevMonth} nextMonth={nextMonth} transactions={transactions} today={today} />
+          <TxList monthLabel={monthLabel} prevMonth={prevMonth} nextMonth={nextMonth} transactions={transactions} today={today} hasMore={hasMore} layout={layout} />
         </div>
 
         {/* Transaktions-Aktionsliste (Bearbeiten/Löschen in der Daumenzone) */}
