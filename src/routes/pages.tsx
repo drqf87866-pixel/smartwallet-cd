@@ -75,7 +75,7 @@ pages.get('/', async (c) => c.redirect((await getAuth(c)) ? '/dashboard' : '/log
 
 pages.get('/login', async (c) => {
   if (await getAuth(c)) return c.redirect('/dashboard');
-  return c.html(<LoginView />);
+  return c.html(<LoginView showDemoHint={Boolean(c.env.ENABLE_DEV_SEED)} />);
 });
 
 pages.get('/register', async (c) => {
@@ -411,7 +411,7 @@ async function loadSummaryData(
 const LIST_PAGE_SIZE = 50;
 
 /**
- * Daten für die Transaktionsliste inkl. Monatsnavi (List-Fragment).
+ * Daten für die Transaktionsliste inkl. Monats-Kontext (List-Fragment).
  * Mit `before`-Cursor werden die nächsten LIST_PAGE_SIZE Buchungen ab dem
  * ältesten bereits gerenderten Eintrag geliefert. Der älteste geladene Tag
  * wird dabei immer vollständig ausgeliefert, damit „Mehr laden“ keine

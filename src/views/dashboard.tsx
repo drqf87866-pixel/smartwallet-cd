@@ -2,7 +2,7 @@ import type { FC } from 'hono/jsx';
 import type { TransactionAccount, TransactionScope, TransactionType } from '../types';
 import { EXPENSE_CATEGORIES } from '../lib/categories';
 import { Layout } from './layout';
-import { BottomNav, CategoryGlobals, CategorySelect, FREQUENCY_OPTIONS, INPUT_CLASS, LABEL_CLASS, MagicSheet, UserChip } from './shared';
+import { BottomNav, CategoryGlobals, CategorySelect, FREQUENCY_OPTIONS, INPUT_CLASS, LABEL_CLASS, MagicSheet, MonthSwitcher, UserChip } from './shared';
 import { fmt, fmtDay, fmtTime } from '../lib/format';
 
 export type DashboardTx = {
@@ -39,11 +39,9 @@ export type SummaryCardsProps = {
   contributionBooked: boolean;
 };
 
-/** Transaktionssektion (inkl. Monatsnavi & manuellem Formular) – Fragment. */
+/** Transaktionssektion (inkl. manuellem Formular) – Fragment. */
 export type TxListProps = {
   monthLabel: string;
-  prevMonth: string;
-  nextMonth: string;
   transactions: DashboardTx[];
   today: string;
   /** Ältere Buchungen im Monat vorhanden → „Mehr laden“-Button anzeigen. */
@@ -54,6 +52,8 @@ export type DashboardProps = SummaryCardsProps & TxListProps & {
   userName: string;
   householdName: string;
   month: string;
+  prevMonth: string;
+  nextMonth: string;
   /** Anzahl wiederkehrender Regeln – Label des Einstiegs-Buttons auf die /recurring-Seite. */
   recurringCount: number;
   /** SSR-Layout: nur eine Transaktions-Repräsentation rendern (Mobile oder Desktop). */
@@ -79,6 +79,19 @@ function accountBadge(t: DashboardTx): { label: string; style: string } {
   if (t.paid_from === 'private') return { label: 'Vorschuss', style: BADGE_STYLES.advance };
   return { label: 'Gemeinschaft', style: BADGE_STYLES.joint };
 }
+
+/** Kleine Inline-SVG-Icons für die Zeilen-Aktionen (Vektor statt Emoji – konsistent über Plattformen). */
+const Icon: FC<{ path: string; className?: string }> = ({ path, className }) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" class={className ?? 'h-4 w-4'} aria-hidden="true">
+    <path d={path} />
+  </svg>
+);
+
+const ICON_PATHS = {
+  edit: 'M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z',
+  recurring: 'M21 12a9 9 0 1 1-2.6-6.3M21 3v6h-6',
+  trash: 'M3 6h18M8 6V4h8v2m1 0v14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V6',
+} as const;
 
 const amountColor = (t: DashboardTx) =>
   t.type === 'income' ? 'text-emerald-700' : t.type === 'expense' ? 'text-red-600' : 'text-slate-500';
@@ -280,7 +293,7 @@ const TxRow: FC<{ t: DashboardTx }> = ({ t }) => {
   const badge = accountBadge(t);
   const editable = isEditable(t);
   return (
-    <tr class="border-b border-slate-100 last:border-0">
+    <tr class="group border-b border-slate-100 last:border-0">
       <td class="whitespace-nowrap py-2.5 pr-3 text-slate-500">
         {fmtDay(t.date)}
         <span class="block text-xs text-slate-500">{fmtTime(t.date)}</span>
@@ -312,16 +325,17 @@ const TxRow: FC<{ t: DashboardTx }> = ({ t }) => {
       </td>
       <td class="whitespace-nowrap py-2.5 pl-3 text-right">
         {editable ? (
-          <>
+          /* Aktionen erst bei Hover/Fokus zeigen (Platz bleibt reserviert) – ruhigere Tabelle */
+          <span class="inline-flex items-center opacity-0 transition focus-within:opacity-100 group-hover:opacity-100">
             <button
               type="button"
               data-edit
               data-tx-id={t.id}
               title="Bearbeiten"
               aria-label="Transaktion bearbeiten"
-              class="h-8 w-8 rounded border border-indigo-200 bg-indigo-50 text-sm font-medium text-indigo-600 hover:bg-indigo-100"
+              class="flex h-8 w-8 items-center justify-center rounded border border-indigo-200 bg-indigo-50 text-indigo-600 hover:bg-indigo-100"
             >
-              <span aria-hidden="true">✏️</span>
+              <Icon path={ICON_PATHS.edit} />
             </button>
             {canMakeRecurring(t) ? (
               <button
@@ -330,9 +344,9 @@ const TxRow: FC<{ t: DashboardTx }> = ({ t }) => {
                 data-tx-id={t.id}
                 title="Wiederkehrend einrichten"
                 aria-label="Als wiederkehrende Zahlung einrichten"
-                class="ml-1.5 h-8 w-8 rounded border border-violet-200 bg-violet-50 text-sm font-medium text-violet-700 hover:bg-violet-100"
+                class="ml-1.5 flex h-8 w-8 items-center justify-center rounded border border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100"
               >
-                <span aria-hidden="true">🔁</span>
+                <Icon path={ICON_PATHS.recurring} />
               </button>
             ) : null}
             <button
@@ -340,11 +354,11 @@ const TxRow: FC<{ t: DashboardTx }> = ({ t }) => {
               data-delete={t.id}
               title="Löschen"
               aria-label="Transaktion löschen"
-              class="ml-1.5 h-8 w-8 rounded border border-red-200 bg-red-50 text-sm font-medium text-red-600 hover:bg-red-100"
+              class="ml-1.5 flex h-8 w-8 items-center justify-center rounded border border-red-200 bg-red-50 text-red-600 hover:bg-red-100"
             >
-              <span aria-hidden="true">🗑</span>
+              <Icon path={ICON_PATHS.trash} />
             </button>
-          </>
+          </span>
         ) : null}
       </td>
     </tr>
@@ -490,8 +504,6 @@ export const TxListMore: FC<{
  */
 export const TxList: FC<TxListProps & { layout?: 'mobile' | 'desktop' }> = ({
   monthLabel,
-  prevMonth,
-  nextMonth,
   transactions,
   today,
   hasMore,
@@ -499,7 +511,7 @@ export const TxList: FC<TxListProps & { layout?: 'mobile' | 'desktop' }> = ({
 }) => {
   return (
     <section>
-      {/* Monats-Steuerung – oben kompakt (Desktop), unten als Daumenzonen-Bar (Mobile) */}
+      {/* Monats-Steuerung sitzt im Kopf der Seite (MonthSwitcher), nicht mehr als fixe Bar */}
       <div class="mb-1 flex items-center justify-between md:hidden">
         <h2 class="font-serif text-base font-semibold text-slate-800">Transaktionen</h2>
       </div>
@@ -514,7 +526,7 @@ export const TxList: FC<TxListProps & { layout?: 'mobile' | 'desktop' }> = ({
         <form id="manual-form" class="mt-3 grid gap-3">
           <label class="block">
             <span class={LABEL_CLASS}>Betrag</span>
-            <input id="m-amount" type="number" inputmode="decimal" step="0.01" min="0.01" required placeholder="Betrag" class={INPUT_CLASS} />
+            <input id="m-amount" type="text" inputmode="decimal" pattern="[0-9]+([.,][0-9]{1,2})?" required placeholder="z. B. 12,50" class={INPUT_CLASS} />
           </label>
           <label class="block">
             <span class={LABEL_CLASS}>Beschreibung</span>
@@ -561,9 +573,15 @@ export const TxList: FC<TxListProps & { layout?: 'mobile' | 'desktop' }> = ({
       </details>
 
       {transactions.length === 0 ? (
-        <div class="flex flex-col items-center gap-2 py-12 text-center">
-          <p class="text-sm text-slate-500">Noch keine Transaktionen in diesem Monat.</p>
-          <button type="button" data-action="open-magic" class="text-sm font-semibold text-indigo-600">
+        <div class="flex flex-col items-center gap-3 rounded-2xl bg-white px-6 py-12 text-center shadow-sm ring-1 ring-slate-200">
+          <span class="flex h-12 w-12 items-center justify-center rounded-full bg-indigo-50 text-indigo-500" aria-hidden="true">
+            <Icon path="M9 14h6M9 10h6M5 3h14v18l-3-2-2 2-2-2-2 2-2-2-3 2z" className="h-6 w-6" />
+          </span>
+          <div>
+            <p class="text-sm font-medium text-slate-700">Noch keine Transaktionen im {monthLabel}</p>
+            <p class="mt-0.5 text-xs text-slate-500">Beschreibe die erste Ausgabe in einem Satz – die KI macht den Rest.</p>
+          </div>
+          <button type="button" data-action="open-magic" class="btn-primary">
             Erste Ausgabe erfassen
           </button>
         </div>
@@ -614,36 +632,6 @@ export const TxList: FC<TxListProps & { layout?: 'mobile' | 'desktop' }> = ({
         </>
       )}
 
-      {/* Daumenzonen-Bar: Monatsnavigation unten, fix über der BottomNav */}
-      <nav
-        aria-label="Monatsnavigation"
-        class="fixed inset-x-0 bottom-[4.5rem] z-20 flex items-center justify-between gap-2 border-t border-slate-200/70 bg-white/95 px-4 py-2.5 backdrop-blur md:hidden"
-        style="padding-bottom: calc(0.625rem + env(safe-area-inset-bottom, 0px))"
-      >
-        <a
-          href={'/dashboard?month=' + prevMonth}
-          aria-label="Voriger Monat"
-          class="flex h-11 min-w-[88px] items-center justify-center gap-1 rounded-full border border-slate-200 bg-white text-sm font-medium text-slate-700 active:bg-slate-50"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" class="h-4 w-4" aria-hidden="true">
-            <path d="m15 18-6-6 6-6" />
-          </svg>
-          <span class="sr-only">Voriger Monat</span>
-          <span class="hidden">Vorher</span>
-        </a>
-        <span class="flex-1 text-center text-sm font-semibold text-slate-800">{monthLabel}</span>
-        <a
-          href={'/dashboard?month=' + nextMonth}
-          aria-label="Nächster Monat"
-          class="flex h-11 min-w-[88px] items-center justify-center gap-1 rounded-full border border-slate-200 bg-white text-sm font-medium text-slate-700 active:bg-slate-50"
-        >
-          <span class="hidden">Nächster</span>
-          <span class="sr-only">Nächster Monat</span>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" class="h-4 w-4" aria-hidden="true">
-            <path d="m9 18 6-6-6-6" />
-          </svg>
-        </a>
-      </nav>
       <TxCacheScript transactions={transactions} />
     </section>
   );
@@ -753,9 +741,9 @@ async function refreshDashboard() {
   var month = window.__MONTH;
   if (!month || !$('summary-frag') || !$('tx-frag')) return false;
   var frags = [$('summary-frag'), $('tx-frag')];
-  frags.forEach(function (f) {
+  var stopLoading = frags.map(function (f) {
     f.setAttribute('aria-busy', 'true');
-    f.classList.add('opacity-50', 'pointer-events-none', 'transition-opacity');
+    return swLoading(f);
   });
   try {
     var parts = await Promise.all([
@@ -776,7 +764,9 @@ async function refreshDashboard() {
   } finally {
     frags.forEach(function (f) {
       f.removeAttribute('aria-busy');
-      f.classList.remove('opacity-50', 'pointer-events-none');
+    });
+    stopLoading.forEach(function (off) {
+      off();
     });
   }
 }
@@ -1058,11 +1048,14 @@ export const DashboardView: FC<DashboardProps> = ({
   return (
     <Layout title="Dashboard">
       <CategoryGlobals />
-      <main class="mx-auto max-w-6xl px-4 pb-44 pt-4 sm:px-8 md:pb-8">
-        {/* Schlanker Kontext-Kopf: kein Brand, nur Monat (Content-First) */}
-        <header class="mb-4 md:hidden">
-          <h1 class="font-serif text-xl font-semibold tracking-tight text-slate-900">{monthLabel}</h1>
-          <p class="text-xs text-slate-500">SmartWallet · {householdName}</p>
+      <main class="mx-auto max-w-6xl px-4 pb-28 pt-4 sm:px-8 md:pb-8">
+        {/* Schlanker Kontext-Kopf: kein Brand, nur Monat (Content-First) + kompakter Switcher */}
+        <header class="mb-4 flex items-center justify-between gap-3 md:hidden">
+          <div class="min-w-0">
+            <h1 class="font-serif text-xl font-semibold tracking-tight text-slate-900">{monthLabel}</h1>
+            <p class="text-xs text-slate-500">SmartWallet · {householdName}</p>
+          </div>
+          <MonthSwitcher basePath="/dashboard" month={month} monthLabel={monthLabel} prevMonth={prevMonth} nextMonth={nextMonth} compact />
         </header>
 
         {/* Desktop-Kopf: volle Navigation + Begrüßung */}
@@ -1076,6 +1069,7 @@ export const DashboardView: FC<DashboardProps> = ({
             </p>
           </div>
           <div class="flex items-center gap-3">
+            <MonthSwitcher basePath="/dashboard" month={month} monthLabel={monthLabel} prevMonth={prevMonth} nextMonth={nextMonth} />
             <nav class="flex items-center gap-1 text-sm" aria-label="Hauptnavigation">
               <a href="/dashboard" aria-current="page" class="rounded-full px-3 py-1.5 font-medium text-slate-600 hover:bg-white/70">Dashboard</a>
               <a href={'/stats?month=' + month} class="rounded-full px-3 py-1.5 font-medium text-slate-600 hover:bg-white/70">Statistik</a>
@@ -1107,7 +1101,7 @@ export const DashboardView: FC<DashboardProps> = ({
         <MagicSheet />
 
         <div id="tx-frag">
-          <TxList monthLabel={monthLabel} prevMonth={prevMonth} nextMonth={nextMonth} transactions={transactions} today={today} hasMore={hasMore} layout={layout} />
+          <TxList monthLabel={monthLabel} transactions={transactions} today={today} hasMore={hasMore} layout={layout} />
         </div>
 
         {/* Transaktions-Aktionsliste (Bearbeiten/Löschen in der Daumenzone) */}
@@ -1178,7 +1172,7 @@ export const DashboardView: FC<DashboardProps> = ({
               </div>
               <div>
                 <label for="s-amount" class="mb-1 block text-xs text-slate-500">Betrag (€)</label>
-                <input id="s-amount" type="number" inputmode="decimal" step="0.01" min="0.01" required placeholder="z. B. 30" class={INPUT_CLASS} />
+                <input id="s-amount" type="text" inputmode="decimal" pattern="[0-9]+([.,][0-9]{1,2})?" required placeholder="z. B. 30" class={INPUT_CLASS} />
               </div>
               <button type="submit" class="btn-primary w-full">
                 Ausgleich buchen
@@ -1213,7 +1207,7 @@ export const DashboardView: FC<DashboardProps> = ({
             <form id="edit-form" class="grid items-end gap-3 sm:grid-cols-3 lg:grid-cols-4">
               <label class="block">
                 <span class={LABEL_CLASS}>Betrag</span>
-                <input id="e-amount" type="number" inputmode="decimal" step="0.01" min="0.01" required placeholder="Betrag" class={INPUT_CLASS} />
+                <input id="e-amount" type="text" inputmode="decimal" pattern="[0-9]+([.,][0-9]{1,2})?" required placeholder="z. B. 12,50" class={INPUT_CLASS} />
               </label>
               <label class="block">
                 <span class={LABEL_CLASS}>Beschreibung</span>

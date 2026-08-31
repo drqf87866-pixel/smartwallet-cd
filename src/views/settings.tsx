@@ -176,7 +176,7 @@ export const SettingsView: FC<SettingsProps> = ({
   startBalance,
 }) => (
   <Layout title="Einstellungen">
-    <main class="mx-auto max-w-2xl px-4 pb-44 pt-4 sm:px-8 md:pb-8">
+    <main class="mx-auto max-w-2xl px-4 pb-28 pt-4 sm:px-8 md:pb-8">
       {/* Schlanker Kontext-Kopf (Content-First) */}
       <header class="mb-4 flex items-center justify-between">
         <div class="flex items-center gap-3">
@@ -269,11 +269,10 @@ export const SettingsView: FC<SettingsProps> = ({
             </label>
             <input
               id="contribution-amount"
-              type="number"
+              type="text"
               inputmode="decimal"
-              step="0.01"
-              min="0"
-              value={myContribution}
+              pattern="[0-9]+([.,][0-9]{1,2})?"
+              value={String(myContribution).replace('.', ',')}
               autocomplete="off"
               class={INPUT_CLASS}
             />
@@ -293,11 +292,10 @@ export const SettingsView: FC<SettingsProps> = ({
             </label>
             <input
               id="set-start"
-              type="number"
+              type="text"
               inputmode="decimal"
-              step="0.01"
-              min="0"
-              value={startBalance}
+              pattern="[0-9]+([.,][0-9]{1,2})?"
+              value={String(startBalance).replace('.', ',')}
               autocomplete="off"
               class={INPUT_CLASS}
             />

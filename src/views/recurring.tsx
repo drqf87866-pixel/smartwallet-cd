@@ -164,7 +164,7 @@ const RecurringEditOverlay: FC = () => (
       <form id="recurring-edit-form" class="grid items-end gap-3 sm:grid-cols-3 lg:grid-cols-4">
         <label class="block">
           <span class={LABEL_CLASS}>Betrag</span>
-          <input id="re-amount" type="number" inputmode="decimal" step="0.01" min="0.01" required placeholder="Betrag" class={INPUT_CLASS} />
+          <input id="re-amount" type="text" inputmode="decimal" pattern="[0-9]+([.,][0-9]{1,2})?" required placeholder="z. B. 12,50" class={INPUT_CLASS} />
         </label>
         <label class="block">
           <span class={LABEL_CLASS}>Art</span>
@@ -279,7 +279,14 @@ updateRecurringPreview();
 
 async function refreshRecurring() {
   if (!$('recurring-frag')) return false;
-  $('recurring-frag').innerHTML = await fetchFragment('/recurring/fragments/list');
+  $('recurring-frag').setAttribute('aria-busy', 'true');
+  var stopLoading = swLoading($('recurring-frag'));
+  try {
+    $('recurring-frag').innerHTML = await fetchFragment('/recurring/fragments/list');
+  } finally {
+    $('recurring-frag').removeAttribute('aria-busy');
+    stopLoading();
+  }
   mergeRecCache($('recurring-frag'));
   syncAllCategoryOptions();
   swApplyDefaults('r-');
@@ -481,7 +488,7 @@ document.addEventListener('submit', async function (e) {
   return (
     <Layout title="Wiederkehrende Zahlungen">
       <CategoryGlobals />
-      <main class="mx-auto max-w-6xl px-4 pb-44 pt-4 sm:px-8 md:pb-8">
+      <main class="mx-auto max-w-6xl px-4 pb-28 pt-4 sm:px-8 md:pb-8">
         {/* Schlanker Kontext-Kopf (Content-First) */}
         <header class="mb-4 md:hidden">
           <h1 class="font-serif text-xl font-semibold tracking-tight text-slate-900">Dauerhaft</h1>
@@ -514,7 +521,7 @@ document.addEventListener('submit', async function (e) {
             <form id="recurring-form" class="mt-2 grid gap-3 sm:grid-cols-3 lg:grid-cols-4">
               <label class="block">
                 <span class={LABEL_CLASS}>Betrag</span>
-                <input id="r-amount" type="number" inputmode="decimal" step="0.01" min="0.01" required placeholder="Betrag" class={INPUT_CLASS} />
+                <input id="r-amount" type="text" inputmode="decimal" pattern="[0-9]+([.,][0-9]{1,2})?" required placeholder="z. B. 12,50" class={INPUT_CLASS} />
               </label>
               <label class="block">
                 <span class={LABEL_CLASS}>Art</span>

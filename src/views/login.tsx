@@ -35,7 +35,7 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
 });
 `;
 
-export const LoginView: FC = () => (
+export const LoginView: FC<{ showDemoHint?: boolean }> = ({ showDemoHint }) => (
   <Layout title="Anmelden">
     <main class="flex min-h-screen items-center justify-center p-6">
       <div class="w-full max-w-sm">
@@ -94,9 +94,11 @@ export const LoginView: FC = () => (
           Passwort vergessen? Der Ersteller deines Haushalts kann es dir in den
           Einstellungen zurücksetzen.
         </p>
-        <p class="mt-2 text-center text-xs text-slate-500">
-          Demo-Zugänge (lokal nach Seed): anna@smartwallet.app oder ben@smartwallet.app · Passwort: demo1234
-        </p>
+        {showDemoHint ? (
+          <p class="mt-2 text-center text-xs text-slate-500">
+            Demo-Zugänge (lokal nach Seed): anna@smartwallet.app oder ben@smartwallet.app · Passwort: demo1234
+          </p>
+        ) : null}
       </div>
 
       <script dangerouslySetInnerHTML={{ __html: script }} />

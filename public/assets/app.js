@@ -170,6 +170,24 @@
   };
 
   /* ------------------------------------------------------------------ */
+  /* Fragment-Ladeanzeige: schmaler Fortschrittsbalken am oberen Rand     */
+  /* des Containers. Rückgabewert ist die Aufräum-Funktion.               */
+  /* ------------------------------------------------------------------ */
+
+  window.swLoading = function (container) {
+    if (!container) return function () {};
+    container.classList.add('sw-loading');
+    var bar = document.createElement('div');
+    bar.className = 'sw-loading-bar';
+    bar.setAttribute('aria-hidden', 'true');
+    container.insertBefore(bar, container.firstChild);
+    return function () {
+      container.classList.remove('sw-loading');
+      if (bar.parentNode) bar.parentNode.removeChild(bar);
+    };
+  };
+
+  /* ------------------------------------------------------------------ */
   /* Gemeinsame Fehler-Recovery: Refresh versuchen, sonst Reload          */
   /* ------------------------------------------------------------------ */
 

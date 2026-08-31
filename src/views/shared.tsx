@@ -102,6 +102,47 @@ export const BottomNav: FC<BottomNavProps> = ({ page, month }) => (
   </nav>
 );
 
+/**
+ * Monats-Switcher (‹ Monat ›) für Dashboard & Statistik.
+ * Kompakt-Variante ohne Label für den Mobile-Kopf (Monat steht dort als H1),
+ * mit „Heute“-Sprungchip, sobald ein anderer Monat als der aktuelle offen ist.
+ */
+export const MonthSwitcher: FC<{
+  /** Basis-Pfad für die Links, z. B. '/dashboard' oder '/stats'. */
+  basePath: string;
+  month: string;
+  monthLabel: string;
+  prevMonth: string;
+  nextMonth: string;
+  compact?: boolean;
+}> = ({ basePath, month, monthLabel, prevMonth, nextMonth, compact }) => {
+  const isCurrent = month === new Date().toISOString().slice(0, 7);
+  const arrowClass =
+    'flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50 active:scale-95';
+  return (
+    <nav aria-label="Monatsnavigation" class="flex shrink-0 items-center gap-1.5">
+      {!isCurrent ? (
+        <a
+          href={basePath}
+          title="Zum aktuellen Monat"
+          class="flex h-9 items-center rounded-full border border-indigo-200 bg-indigo-50 px-3 text-xs font-semibold text-indigo-600 transition hover:bg-indigo-100 active:scale-95"
+        >
+          Heute
+        </a>
+      ) : null}
+      <a href={basePath + '?month=' + prevMonth} aria-label="Voriger Monat" class={arrowClass}>
+        <Icon path="m15 18-6-6 6-6" className="h-4 w-4" />
+      </a>
+      {compact ? null : (
+        <span class="min-w-[8rem] text-center text-sm font-semibold tabular-nums text-slate-800">{monthLabel}</span>
+      )}
+      <a href={basePath + '?month=' + nextMonth} aria-label="Nächster Monat" class={arrowClass}>
+        <Icon path="m9 18 6-6-6-6" className="h-4 w-4" />
+      </a>
+    </nav>
+  );
+};
+
 const NavTab: FC<{ item: (typeof NAV_ITEMS)[number]; page: BottomNavPage; month?: string }> = ({ item, page, month }) => {
   const active = item.page === page;
   const href = item.page === 'dashboard' ? '/dashboard' : item.href(month);

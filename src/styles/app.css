@@ -37,3 +37,50 @@
 .safe-bottom {
   padding-bottom: calc(1.25rem + env(safe-area-inset-bottom));
 }
+
+/* Fragment-Ladeanzeige (swLoading in app.js): schmaler, indeterminierter
+   Fortschrittsbalken oben im Container statt nur abgedunkeltem Inhalt. */
+.sw-loading {
+  position: relative;
+}
+.sw-loading-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  overflow: hidden;
+  border-radius: 2px;
+  z-index: 10;
+}
+.sw-loading-bar::before {
+  content: '';
+  display: block;
+  height: 100%;
+  width: 40%;
+  background: #4f46e5;
+  animation: sw-loading-slide 1s ease-in-out infinite;
+}
+@keyframes sw-loading-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
+}
+
+/* Bewegungsreduktion respektieren: Sheet-Animationen, Button-Scale und
+   Smooth-Scrolling abschalten, wenn das System es wünscht. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+  html {
+    scroll-behavior: auto;
+  }
+}

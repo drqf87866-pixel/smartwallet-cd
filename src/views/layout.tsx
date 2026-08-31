@@ -16,7 +16,7 @@ export const Layout: FC<LayoutProps> = ({ title, children }) => (
       <meta charset="utf-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
       <title>{title} · SmartWallet</title>
-      <meta name="theme-color" content="#b65535" />
+      <meta name="theme-color" content="#4f46e5" />
       <link rel="manifest" href="/manifest.webmanifest" />
       <link rel="icon" href="/assets/icon-192.png" type="image/png" />
       <link rel="apple-touch-icon" href="/assets/icon-192.png" />
