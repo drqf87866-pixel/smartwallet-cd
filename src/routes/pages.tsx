@@ -89,20 +89,28 @@ pages.get('/settings', async (c) => {
   if (!auth) return c.redirect('/login');
 
   const hid = auth.hid;
-  const household = await c.env.DB
-    .prepare('SELECT name, invite_code FROM households WHERE id = ?1')
-    .bind(hid)
-    .first<{ name: string; invite_code: string }>();
-  const { results: members } = await c.env.DB
-    .prepare(
-      'SELECT id, name, monthly_contribution, is_admin FROM users WHERE household_id = ?1 ORDER BY id',
-    )
-    .bind(hid)
-    .all<{ id: number; name: string; monthly_contribution: number; is_admin: number }>();
-  const { results: settingRows } = await c.env.DB
-    .prepare("SELECT value FROM settings WHERE household_id = ?1 AND key = 'joint_start_balance'")
-    .bind(hid)
-    .all<{ value: string }>();
+  const [household, membersResult, settingsResult, recurringCountRow] = await Promise.all([
+    c.env.DB
+      .prepare('SELECT name, invite_code FROM households WHERE id = ?1')
+      .bind(hid)
+      .first<{ name: string; invite_code: string }>(),
+    c.env.DB
+      .prepare(
+        'SELECT id, name, monthly_contribution, is_admin FROM users WHERE household_id = ?1 ORDER BY id',
+      )
+      .bind(hid)
+      .all<{ id: number; name: string; monthly_contribution: number; is_admin: number }>(),
+    c.env.DB
+      .prepare("SELECT value FROM settings WHERE household_id = ?1 AND key = 'joint_start_balance'")
+      .bind(hid)
+      .all<{ value: string }>(),
+    c.env.DB
+      .prepare('SELECT COUNT(*) AS n FROM recurring_rules WHERE household_id = ?1')
+      .bind(hid)
+      .first<{ n: number }>(),
+  ]);
+  const members = membersResult.results;
+  const settingRows = settingsResult.results;
   const me = members.find((m) => m.id === auth.uid);
 
   return c.html(
@@ -120,6 +128,7 @@ pages.get('/settings', async (c) => {
       }))}
       myContribution={me?.monthly_contribution ?? 0}
       startBalance={toNumber(settingRows[0]?.value)}
+      recurringCount={recurringCountRow?.n ?? 0}
     />,
   );
 });
@@ -148,7 +157,7 @@ pages.get('/recurring', async (c) => {
   const auth = await getAuth(c);
   if (!auth) return c.redirect('/login');
 
-  const [data, household, memberCountRow] = await Promise.all([
+  const [data, household, memberCountRow, recurringCountRow] = await Promise.all([
     loadRecurringData(c, auth.hid, auth.uid),
     c.env.DB
       .prepare('SELECT name FROM households WHERE id = ?1')
@@ -156,6 +165,10 @@ pages.get('/recurring', async (c) => {
       .first<{ name: string }>(),
     c.env.DB
       .prepare('SELECT COUNT(*) AS n FROM users WHERE household_id = ?1')
+      .bind(auth.hid)
+      .first<{ n: number }>(),
+    c.env.DB
+      .prepare('SELECT COUNT(*) AS n FROM recurring_rules WHERE household_id = ?1')
       .bind(auth.hid)
       .first<{ n: number }>(),
   ]);
@@ -166,6 +179,7 @@ pages.get('/recurring', async (c) => {
       rules={data.rules}
       today={data.today}
       memberCount={Math.max(memberCountRow?.n ?? 1, 1)}
+      recurringCount={recurringCountRow?.n ?? 0}
     />,
   );
 });
@@ -521,7 +535,7 @@ async function loadStatsData(c: Context<Env>, auth: AuthInfo, month: string) {
     .first<{ n: number }>();
   const memberCount = Math.max(memberCountRow?.n ?? 1, 1);
 
-  const [household, categorySplitResult, historyResult, topResult] = await Promise.all([
+  const [household, categorySplitResult, historyResult, topResult, recurringCountRow] = await Promise.all([
     c.env.DB
       .prepare('SELECT name FROM households WHERE id = ?1')
       .bind(hid)
@@ -564,6 +578,10 @@ async function loadStatsData(c: Context<Env>, auth: AuthInfo, month: string) {
       )
       .bind(hid, prefix, auth.uid, memberCount)
       .all<{ description: string; category: string; amount: number; date: string; scope: 'personal' | 'shared'; created_by: string; share_amount: number }>(),
+    c.env.DB
+      .prepare('SELECT COUNT(*) AS n FROM recurring_rules WHERE household_id = ?1')
+      .bind(hid)
+      .first<{ n: number }>(),
   ]);
   const historyRows = historyResult.results;
 
@@ -614,6 +632,7 @@ async function loadStatsData(c: Context<Env>, auth: AuthInfo, month: string) {
     memberCount,
     history,
     topExpenses,
+    recurringCount: recurringCountRow?.n ?? 0,
   };
 }
 

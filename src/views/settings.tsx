@@ -1,6 +1,6 @@
 import type { FC } from 'hono/jsx';
 import { Layout } from './layout';
-import { BottomNav, MagicSheet, INPUT_CLASS } from './shared';
+import { BottomNav, DesktopNav, MagicSheet, INPUT_CLASS, UserChip } from './shared';
 import { fmt } from '../lib/format';
 
 export type MemberInfo = { id: number; name: string; monthly_contribution: number; isAdmin: boolean };
@@ -16,6 +16,7 @@ type SettingsProps = {
   members: MemberInfo[];
   myContribution: number;
   startBalance: number;
+  recurringCount: number;
 };
 
 const script = `
@@ -174,17 +175,36 @@ export const SettingsView: FC<SettingsProps> = ({
   members,
   myContribution,
   startBalance,
+  recurringCount,
 }) => (
   <Layout title="Einstellungen">
     <main class="mx-auto max-w-2xl px-4 pb-28 pt-4 sm:px-8 md:pb-8">
       {/* Schlanker Kontext-Kopf (Content-First) */}
-      <header class="mb-4 flex items-center justify-between">
+      <header class="mb-4 md:hidden">
+        <h1 class="font-serif text-xl font-semibold tracking-tight text-slate-900">Einstellungen</h1>
+        <p class="text-xs text-slate-500">{householdName}</p>
+      </header>
+
+      {/* Desktop-Kopf – gleiche Tab-Leiste wie auf Dashboard/Statistik/Wiederkehrend */}
+      <header class="mb-8 hidden items-center justify-between md:flex">
+        <div>
+          <h1 class="font-serif text-2xl font-semibold tracking-tight text-slate-900">Einstellungen</h1>
+          <p class="text-sm text-slate-500">Profil und Haushalt für „{householdName}“.</p>
+        </div>
+        <div class="flex items-center gap-3">
+          <DesktopNav page="settings" recurringCount={recurringCount} />
+          <UserChip userName={userName} />
+        </div>
+      </header>
+
+      {/* Profil-Kärtchen (Avatar/Name/E-Mail/Abmelden) – auf allen Breiten sichtbar */}
+      <section class="card mb-4 flex items-center justify-between gap-3">
         <div class="flex items-center gap-3">
           <div class="flex h-11 w-11 items-center justify-center rounded-full bg-indigo-600 text-lg font-bold text-white">
             {userName.charAt(0).toUpperCase()}
           </div>
           <div>
-            <h1 class="font-serif text-xl font-semibold tracking-tight text-slate-900">{userName}</h1>
+            <h2 class="text-base font-semibold text-slate-900">{userName}</h2>
             <p class="text-xs text-slate-500">{userEmail}</p>
           </div>
         </div>
@@ -194,7 +214,7 @@ export const SettingsView: FC<SettingsProps> = ({
         >
           Abmelden
         </button>
-      </header>
+      </section>
 
       <section class="card mb-4" id="household-card" data-invite-code={inviteCode}>
         <h2 class="text-sm font-medium text-slate-500">Haushalt „{householdName}“</h2>

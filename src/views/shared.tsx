@@ -143,6 +143,50 @@ export const MonthSwitcher: FC<{
   );
 };
 
+type DesktopNavProps = {
+  /** Aktive Seite – bestimmt Highlighting, analog zu BottomNavProps. */
+  page: BottomNavPage;
+  month?: string;
+  /** Anzahl Regeln für das Badge "Wiederkehrend (N)". */
+  recurringCount?: number;
+};
+
+/**
+ * Desktop-Pendant zu BottomNav – horizontale Tab-Leiste im Seitenkopf.
+ * Wird auf allen Hauptseiten identisch gerendert, damit beim Wechseln
+ * zwischen Dashboard/Statistik/Wiederkehrend keine Navigation verloren geht.
+ * Settings wird hier ausgeblendet – dorthin führt weiterhin der UserChip-Avatar.
+ */
+export const DesktopNav: FC<DesktopNavProps> = ({ page, month, recurringCount }) => (
+  <nav class="flex items-center gap-1 text-sm" aria-label="Hauptnavigation">
+    {NAV_ITEMS.filter((item) => item.page !== 'settings').map((item) => {
+      const active = item.page === page;
+      const href = item.page === 'dashboard' ? '/dashboard' : item.href(month);
+      const label =
+        item.page === 'recurring' && recurringCount !== undefined
+          ? `${item.label === 'Dauerhaft' ? 'Wiederkehrend' : item.label} (${recurringCount})`
+          : item.page === 'stats'
+            ? 'Statistik'
+            : item.page === 'recurring'
+              ? 'Wiederkehrend'
+              : 'Dashboard';
+      return (
+        <a
+          key={item.page}
+          href={href}
+          aria-current={active ? 'page' : undefined}
+          class={
+            'whitespace-nowrap rounded-full px-3 py-1.5 font-medium transition ' +
+            (active ? 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100' : 'text-slate-600 hover:bg-white/70')
+          }
+        >
+          {label}
+        </a>
+      );
+    })}
+  </nav>
+);
+
 const NavTab: FC<{ item: (typeof NAV_ITEMS)[number]; page: BottomNavPage; month?: string }> = ({ item, page, month }) => {
   const active = item.page === page;
   const href = item.page === 'dashboard' ? '/dashboard' : item.href(month);

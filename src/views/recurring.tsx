@@ -2,7 +2,7 @@ import type { FC } from 'hono/jsx';
 import { frequencyLabel } from '../lib/recurring';
 import type { TransactionAccount, TransactionScope } from '../types';
 import { Layout } from './layout';
-import { BottomNav, CategoryGlobals, CategorySelect, FREQUENCY_OPTIONS, INPUT_CLASS, LABEL_CLASS, MagicSheet, UserChip } from './shared';
+import { BottomNav, CategoryGlobals, CategorySelect, DesktopNav, FREQUENCY_OPTIONS, INPUT_CLASS, LABEL_CLASS, MagicSheet, UserChip } from './shared';
 import { fmt, fmtDate } from '../lib/format';
 
 /** Regel inkl. berechnetem nächsten Fälligkeitsdatum (null = inaktiv/keine mehr). */
@@ -227,10 +227,11 @@ export type RecurringViewProps = {
   rules: RecurringRuleView[];
   today: string;
   memberCount: number;
+  recurringCount: number;
 };
 
 /** Eigene Seite „Wiederkehrende Zahlungen“ (Anlegen-Sheet + Aktionsliste + Edit-Overlay). */
-export const RecurringView: FC<RecurringViewProps> = ({ userName, householdName, rules, today, memberCount }) => {
+export const RecurringView: FC<RecurringViewProps> = ({ userName, householdName, rules, today, memberCount, recurringCount }) => {
   const script = `
 window.__MEMBERS = ${JSON.stringify(memberCount)};
 window.__swInit = window.__swInit || [];
@@ -504,7 +505,10 @@ document.addEventListener('submit', async function (e) {
               Regeln für „{householdName}“ werden automatisch zum Fälligkeitsdatum gebucht.
             </p>
           </div>
-          <UserChip userName={userName} />
+          <div class="flex items-center gap-3">
+            <DesktopNav page="recurring" recurringCount={recurringCount} />
+            <UserChip userName={userName} />
+          </div>
         </header>
 
         <section class="card mb-4">

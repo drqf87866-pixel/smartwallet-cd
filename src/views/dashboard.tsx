@@ -2,7 +2,7 @@ import type { FC } from 'hono/jsx';
 import type { TransactionAccount, TransactionScope, TransactionType } from '../types';
 import { EXPENSE_CATEGORIES } from '../lib/categories';
 import { Layout } from './layout';
-import { BottomNav, CategoryGlobals, CategorySelect, FREQUENCY_OPTIONS, INPUT_CLASS, LABEL_CLASS, MagicSheet, MonthSwitcher, UserChip } from './shared';
+import { BottomNav, CategoryGlobals, CategorySelect, DesktopNav, FREQUENCY_OPTIONS, INPUT_CLASS, LABEL_CLASS, MagicSheet, MonthSwitcher, UserChip } from './shared';
 import { fmt, fmtDay, fmtTime } from '../lib/format';
 
 export type DashboardTx = {
@@ -1072,17 +1072,7 @@ export const DashboardView: FC<DashboardProps> = ({
           </div>
           <div class="flex items-center gap-3">
             <MonthSwitcher basePath="/dashboard" month={month} monthLabel={monthLabel} prevMonth={prevMonth} nextMonth={nextMonth} />
-            <nav class="flex items-center gap-1 text-sm" aria-label="Hauptnavigation">
-              <a href="/dashboard" aria-current="page" class="rounded-full px-3 py-1.5 font-medium text-slate-600 hover:bg-white/70">Dashboard</a>
-              <a href={'/stats?month=' + month} class="rounded-full px-3 py-1.5 font-medium text-slate-600 hover:bg-white/70">Statistik</a>
-              <a
-                href="/recurring"
-                title="Wiederkehrende Zahlungen verwalten"
-                class="rounded-full bg-indigo-50 px-3 py-1.5 font-medium text-indigo-600 transition hover:bg-indigo-100"
-              >
-                Wiederkehrend ({recurringCount})
-              </a>
-            </nav>
+            <DesktopNav page="dashboard" month={month} recurringCount={recurringCount} />
             <UserChip userName={userName} />
           </div>
         </header>

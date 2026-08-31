@@ -13,6 +13,9 @@
     "db:migrate:local": "wrangler d1 execute smartwallet-cd-db --local --file=./scripts/d1-baseline-migrations.sql && wrangler d1 migrations apply smartwallet-cd-db --local",
     "db:migrate:remote": "wrangler d1 execute smartwallet-cd-db --remote --file=./scripts/d1-baseline-migrations.sql && wrangler d1 migrations apply smartwallet-cd-db --remote",
     "db:reset": "wrangler d1 execute smartwallet-cd-db --local --file=./scripts/reset.sql && npm run db:init",
+    "db:wipe:local": "wrangler d1 execute smartwallet-cd-db --local --file=./scripts/wipe.sql",
+    "db:wipe:remote": "wrangler d1 execute smartwallet-cd-db --remote --file=./scripts/wipe.sql",
+    "db:seed:local": "node scripts/seed-testdata.mjs > scripts/.seed.local.sql && wrangler d1 execute smartwallet-cd-db --local --file=./scripts/.seed.local.sql",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

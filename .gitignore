@@ -6,3 +6,4 @@ dist/
 .zcode/
 public/assets/app.css
 .claude/
+scripts/.seed.local.sql

@@ -1,7 +1,7 @@
 import type { FC } from 'hono/jsx';
 import type { TransactionScope } from '../types';
 import { Layout } from './layout';
-import { BottomNav, MagicSheet, MonthSwitcher, UserChip } from './shared';
+import { BottomNav, DesktopNav, MagicSheet, MonthSwitcher, UserChip } from './shared';
 import { fmt, fmtDay, fmtMonthShort } from '../lib/format';
 
 export type CategorySlice = { category: string; spent: number };
@@ -27,6 +27,7 @@ export type StatsProps = {
   memberCount: number;
   history: HistoryMonth[];
   topExpenses: TopExpense[];
+  recurringCount: number;
 };
 
 const DONUT_RADIUS = 45;
@@ -173,6 +174,7 @@ export const StatsView: FC<StatsProps> = ({
   memberCount,
   history,
   topExpenses,
+  recurringCount,
 }) => {
   const incomeTotal = history.find((row) => row.ym === month)?.income ?? 0;
   const balance = incomeTotal - categoryTotal;
@@ -199,6 +201,7 @@ export const StatsView: FC<StatsProps> = ({
           </div>
           <div class="flex items-center gap-3">
             <MonthSwitcher basePath="/stats" month={month} monthLabel={monthLabel} prevMonth={prevMonth} nextMonth={nextMonth} />
+            <DesktopNav page="stats" month={month} recurringCount={recurringCount} />
             <UserChip userName={userName} />
           </div>
         </header>
