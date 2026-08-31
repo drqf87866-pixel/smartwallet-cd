@@ -395,7 +395,11 @@ const TxCard: FC<{ t: DashboardTx }> = ({ t }) => {
             <circle cx="19" cy="12" r="1.6" />
           </svg>
         </button>
-      ) : null}
+      ) : (
+        // Platzhalter in gleicher Größe, damit der Betrag unabhängig von der
+        // Bearbeitbarkeit immer an derselben Position endet (nicht fokussierbar).
+        <span class="h-10 w-10 shrink-0" aria-hidden="true" />
+      )}
     </li>
   );
 };
