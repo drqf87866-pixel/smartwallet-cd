@@ -53,7 +53,7 @@ Die Suite läuft mit [vitest-pool-workers](https://developers.cloudflare.com/wor
 direkt in der workerd-Runtime: Unit-Tests gegen die Kernlogik (`src/lib/*`:
 Wiederkehrende Zahlungen, Validierung, Kategorien, Invite-Codes, Passwort-Hashing) und
 Integrationstests gegen den echten Worker inklusive D1 (`test/integration/api.spec.ts`:
-Registrierung, Login, Transaktionen, Budgets, Passwort-Reset, Haushalts-Scoping, CSV-Export).
+Registrierung, Login, Transaktionen, Passwort-Reset, Haushalts-Scoping, CSV-Export).
 
 Für die Tests gibt es `vitest.wrangler.toml` – eine schlanke Kopie der Wrangler-Konfiguration
 ohne `[assets]`, ohne Rate-Limit-Bindings (der Helper fail-t dann offen) und ohne Cron.
@@ -68,7 +68,7 @@ führt Typecheck, CSS-Build, Tests und `wrangler deploy --dry-run` bei jedem Pus
 | `/`                   | GET     | –    | Redirect zu `/dashboard` bzw. `/login`                          |
 | `/login`              | GET     | –    | Login-Seite (Hono JSX)                                          |
 | `/register`           | GET     | –    | Registrierungsseite (Haushalt erstellen / Code einlösen)         |
-| `/dashboard`          | GET     | JWT  | Dashboard: 4 Karten, Budgets, Historie, Magic Input              |
+| `/dashboard`          | GET     | JWT  | Dashboard: 4 Karten, Historie, Magic Input                       |
 | `/api/health`         | GET     | –    | D1-Konnektivitätscheck                                          |
 | `/api/dev/seed`       | POST    | –    | Demo-Nutzer + Beispiel-Transaktionen + Settings anlegen (nur lokal, `ENABLE_DEV_SEED`) |
 | `/api/login`          | POST    | –    | Login, setzt JWT als HTTP-only-Cookie (`sw_token`)               |
@@ -82,7 +82,6 @@ führt Typecheck, CSS-Build, Tests und `wrangler deploy --dry-run` bei jedem Pus
 | `/api/settlements`    | POST    | JWT  | Ausgleichszahlung zwischen den Partnern (`payer: me`/`partner`)  |
 | `/api/recurring`      | GET/POST| JWT  | Wiederkehrende Zahlungen: Regeln listen/anlegen                  |
 | `/api/recurring/:id`  | PUT/DEL | JWT  | Regel ändern/pausieren (`{active}`) / löschen (Buchungen bleiben)|
-| `/api/budgets`        | GET/PUT | PUT: JWT | Budgets je Kategorie (`month: 'default'` oder `YYYY-MM`)     |
 | `/api/household/invite` | PUT   | JWT (Admin) | Einladungscode rotieren (alte Links ungültig)             |
 | `/api/household/members/:id` | DELETE | JWT (Admin) | Mitglied entfernen (nur ohne offene Salden)          |
 | `/api/household/members/:id/password` | PUT | JWT (Admin) | Passwort zurücksetzen, antwortet einmalig mit Temp-Passwort |
@@ -161,20 +160,6 @@ Sie gelten an drei Stellen:
   wählt daraus aus (Pro-Prompt-Anleitung je nach expense/income/transfer).
 - **Manuelle Eingabe & Bearbeiten**: Kategorie-Felder sind geschlossene `<select>`-Dropdowns
   (serverseitig gegen die kanonische Liste validiert).
-- **Budgets**: das Verwaltungs-Overlay listet alle Ausgaben-Kategorien.
-
-## Budgets
-
-Im Dashboard (Sektion „Budgets“ zwischen Kopf-Karten und Verlauf) sieht man je Kategorie
-Verbrauch und Fortschrittsbalken (grün < 75 %, amber < 100 %, rot darüber), sortiert nach
-Auslastung. Über „Verwalten“ öffnet sich ein Overlay: Geltungsbereich „Jeden Monat (Standard)“
-oder „Nur [Monat]“ wählen, Beträge je Ausgaben-Kategorie eintragen, leeres Feld = kein Budget
-(geleert speichern löscht das Budget via `PUT /api/budgets` mit `amount: 0`). Ein Budget mit
-`month = 'default'` gilt für jeden Monat, ein konkretes `YYYY-MM` überschreibt es nur für
-diesen Monat. Gezählt werden alle Ausgaben (`type = 'expense'`) des Haushalts im gewählten
-Monat – auch private, da Budgets den gemeinsamen Konsum abbilden (Aggregat, keine Einzelpreise
-anderer Mitglieder sichtbar). Die Sektion aktualisiert sich nach jeder Buchung automatisch
-per HTML-Fragment (`/dashboard/fragments/budgets`).
 
 ## Statistik
 

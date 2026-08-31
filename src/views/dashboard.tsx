@@ -50,27 +50,7 @@ export type TxListProps = {
   hasMore: boolean;
 };
 
-/** Budget-Zeile: effektives Budget (monatsspezifisch, sonst Standard) + Verbrauch. */
-export type BudgetRow = {
-  category: string;
-  budget: number;
-  spent: number;
-  rest: number;
-};
-
-/** Budget-Sektion inkl. Verwaltungs-Overlay – Fragment. */
-export type BudgetsProps = {
-  budgets: BudgetRow[];
-  monthLabel: string;
-  /** Monatsspezifische Budgets (Kategorie → Betrag) – Vorbefüllung des Overlays. */
-  monthBudgets: Record<string, number>;
-  /** Standard-Budgets für jeden Monat (Kategorie → Betrag). */
-  defaultBudgets: Record<string, number>;
-  /** Mindestens ein monatsspezifisches Budget vorhanden → Overlay startet im Monatsmodus. */
-  hasMonthSpecific: boolean;
-};
-
-export type DashboardProps = SummaryCardsProps & TxListProps & BudgetsProps & {
+export type DashboardProps = SummaryCardsProps & TxListProps & {
   userName: string;
   householdName: string;
   month: string;
@@ -292,151 +272,6 @@ export const SummaryCards: FC<SummaryCardsProps> = ({
           </button>
         </section>
       </section>
-    </>
-  );
-};
-
-/* ------------------------------------------------------------------ */
-/* Budgets: Fortschritts-Karten + Verwaltungs-Overlay                  */
-/* ------------------------------------------------------------------ */
-
-const budgetBarColor = (row: BudgetRow): string =>
-  row.rest < 0 ? 'bg-red-500' : row.spent / row.budget >= 0.75 ? 'bg-amber-500' : 'bg-emerald-500';
-const budgetValueColor = (row: BudgetRow): string =>
-  row.rest < 0 ? 'text-red-600' : row.spent / row.budget >= 0.75 ? 'text-amber-600' : 'text-emerald-700';
-
-/**
- * Budget-Sektion – Übersicht mit Fortschrittsbalken (Fragment) samt
- * Verwaltungs-Overlay. Das Overlay liegt im Fragment, damit ein Refresh
- * die Vorbefüllung automatisch aktualisiert.
- */
-export const BudgetsCard: FC<BudgetsProps> = ({
-  budgets,
-  monthLabel,
-  monthBudgets,
-  defaultBudgets,
-  hasMonthSpecific,
-}) => {
-  const scope = hasMonthSpecific ? 'month' : 'default';
-  const valueFor = (category: string): string =>
-    String((scope === 'month' ? monthBudgets[category] : defaultBudgets[category]) ?? '');
-
-  return (
-    <>
-      <section class="card">
-        <div class="flex items-center justify-between gap-3">
-          <div>
-            <h2 class="text-sm font-medium text-slate-500">Budgets · {monthLabel}</h2>
-            <p class="mt-0.5 text-xs text-slate-500">Wie viel pro Kategorie noch übrig ist.</p>
-          </div>
-          <button type="button" data-action="open-budgets" class="btn-secondary shrink-0 !py-2 text-sm">
-            Verwalten
-          </button>
-        </div>
-
-        {budgets.length === 0 ? (
-          <p class="mt-4 rounded-xl bg-slate-50 px-4 py-3 text-sm leading-snug text-slate-500">
-            Noch keine Budgets festgelegt. Lege Monatslimits je Kategorie fest, um größere Ausgaben im
-            Blick zu behalten.
-          </p>
-        ) : (
-          <ul class="mt-4 space-y-3">
-            {budgets.map((b) => {
-              const pct = Math.min(100, Math.round((b.spent / b.budget) * 100));
-              return (
-                <li>
-                  <div class="mb-1 flex items-baseline justify-between gap-2 text-sm">
-                    <span class="min-w-0 truncate font-medium text-slate-700">{b.category}</span>
-                    <span class={'shrink-0 tabular-nums ' + budgetValueColor(b)}>
-                      {fmt(b.spent)} / {fmt(b.budget)}
-                    </span>
-                  </div>
-                  <div
-                    class="h-2 overflow-hidden rounded-full bg-slate-100"
-                    role="progressbar"
-                    aria-valuenow={pct}
-                    aria-valuemin={0}
-                    aria-valuemax={100}
-                    aria-label={`Budget ${b.category}: ${pct}% verbraucht`}
-                  >
-                    <div class={'h-full rounded-full ' + budgetBarColor(b)} style={`width:${pct}%`}></div>
-                  </div>
-                  <p class={'mt-1 text-xs ' + (b.rest < 0 ? 'text-red-600' : 'text-slate-500')}>
-                    {b.rest < 0 ? `${fmt(Math.abs(b.rest))} über Budget` : `noch ${fmt(b.rest)} übrig`}
-                  </p>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
-
-      {/* Verwaltungs-Overlay: Geltungsbereich wählen, Werte je Kategorie pflegen */}
-      <div id="budgets-overlay" class="fixed inset-0 z-50 hidden">
-        <div class="absolute inset-0 bg-slate-900/40" data-close="budgets-overlay"></div>
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="budgets-title"
-          class="safe-bottom absolute inset-x-0 bottom-0 max-h-[88vh] overflow-y-auto rounded-t-2xl bg-white p-5 shadow-xl sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:w-[30rem] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl"
-        >
-          <div class="mx-auto mb-4 h-1.5 w-10 rounded-full bg-slate-200 sm:hidden" aria-hidden="true"></div>
-          <div class="mb-3 flex items-start justify-between">
-            <h2 id="budgets-title" class="text-base font-semibold text-slate-800">Budgets verwalten</h2>
-            <button
-              type="button"
-              data-close="budgets-overlay"
-              aria-label="Budgets-Dialog schließen"
-              class="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-500"
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" class="h-5 w-5" aria-hidden="true">
-                <path d="M6 6l12 12M18 6L6 18" />
-              </svg>
-            </button>
-          </div>
-
-          <form id="budgets-form" class="grid gap-3">
-            <label class="block">
-              <span class={LABEL_CLASS}>Gilt für</span>
-              <select id="budgets-scope" class={INPUT_CLASS}>
-                <option value="default" selected={scope === 'default'}>Jeden Monat (Standard)</option>
-                <option value="month" selected={scope === 'month'}>Nur {monthLabel}</option>
-              </select>
-            </label>
-            <p class="text-xs leading-snug text-slate-500">
-              Leeres Feld = kein Budget. Ein geleertes Feld löscht das Budget im gewählten Geltungsbereich.
-            </p>
-            <div class="grid gap-x-3 gap-y-2 sm:grid-cols-2">
-              {EXPENSE_CATEGORIES.map((category) => (
-                <label class="flex items-center gap-2">
-                  <span class="w-24 shrink-0 truncate text-xs text-slate-500">{category}</span>
-                  <input
-                    type="number"
-                    inputmode="decimal"
-                    step="0.01"
-                    min="0"
-                    autocomplete="off"
-                    placeholder="kein Budget"
-                    class={INPUT_CLASS + ' !px-2.5 !py-1.5 text-sm'}
-                    data-category={category}
-                    data-default={String(defaultBudgets[category] ?? '')}
-                    data-month={String(monthBudgets[category] ?? '')}
-                    value={valueFor(category)}
-                  />
-                </label>
-              ))}
-            </div>
-            <div class="flex gap-2">
-              <button type="submit" class="btn-primary flex-1">
-                Budgets speichern
-              </button>
-              <button type="button" data-close="budgets-overlay" class="btn-secondary">
-                Abbrechen
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
     </>
   );
 };
@@ -896,27 +731,9 @@ function updateManualPreview() {
   updatePreview('m-', window.__MEMBERS || 1);
 }
 
-// --- Budgets verwalten: Felder je Geltungsbereich umschalten ----------------
-// Originalwerte hängen als data-Attribute am Feld; gespeichert werden nur
-// Änderungen, ein geleertes Feld löscht das Budget (amount 0).
-function budgetsScope() {
-  var select = $('budgets-scope');
-  return select ? select.value : 'default';
-}
-
-function budgetsFill() {
-  var scope = budgetsScope();
-  var attr = scope === 'month' ? 'data-month' : 'data-default';
-  var inputs = document.querySelectorAll('#budgets-form input[data-category]');
-  Array.prototype.forEach.call(inputs, function (input) {
-    input.value = input.getAttribute(attr) || '';
-  });
-}
-
 document.addEventListener('change', function (e) {
   if (!e.target) return;
   if (e.target.id === 's-from') rebuildRecipientOptions();
-  if (e.target.id === 'budgets-scope') budgetsFill();
   if (/^(m|e)-type$/.test(e.target.id)) {
     var prefix = e.target.id.slice(0, e.target.id.indexOf('type'));
     syncCategoryOptions(prefix, '');
@@ -936,7 +753,6 @@ async function refreshDashboard() {
   var month = window.__MONTH;
   if (!month || !$('summary-frag') || !$('tx-frag')) return false;
   var frags = [$('summary-frag'), $('tx-frag')];
-  if ($('budgets-frag')) frags.push($('budgets-frag'));
   frags.forEach(function (f) {
     f.setAttribute('aria-busy', 'true');
     f.classList.add('opacity-50', 'pointer-events-none', 'transition-opacity');
@@ -946,13 +762,9 @@ async function refreshDashboard() {
       fetchFragment('/dashboard/fragments/summary?month=' + month),
       fetchFragment('/dashboard/fragments/list?month=' + month +
         '&layout=' + (window.matchMedia('(min-width: 768px)').matches ? 'desktop' : 'mobile')),
-      $('budgets-frag')
-        ? fetchFragment('/dashboard/fragments/budgets?month=' + month)
-        : Promise.resolve(null),
     ]);
     $('summary-frag').innerHTML = parts[0];
     $('tx-frag').innerHTML = parts[1];
-    if (parts[2] !== null && $('budgets-frag')) $('budgets-frag').innerHTML = parts[2];
     mergeTxCache($('tx-frag'));
     syncAllCategoryOptions();
     swApplyDefaults('m-');
@@ -981,14 +793,6 @@ document.addEventListener('click', async function (e) {
     if (name === 'open-settle') {
       openSheet('settlement-overlay');
       setTimeout(function () { $('s-amount').focus(); }, 150);
-      return;
-    }
-    if (name === 'open-budgets') {
-      openSheet('budgets-overlay');
-      setTimeout(function () {
-        var first = document.querySelector('#budgets-form input[data-category]');
-        if (first) first.focus();
-      }, 150);
       return;
     }
     if (name === 'contribution') {
@@ -1186,52 +990,6 @@ document.addEventListener('submit', async function (e) {
     return;
   }
 
-  if (form.id === 'budgets-form') {
-    e.preventDefault();
-    var scope = budgetsScope();
-    var monthParam = scope === 'month' ? window.__MONTH : 'default';
-    var inputs = form.querySelectorAll('input[data-category]');
-    var changes = [];
-    var invalid = null;
-    Array.prototype.forEach.call(inputs, function (input) {
-      if (invalid) return;
-      var original = input.getAttribute(scope === 'month' ? 'data-month' : 'data-default') || '';
-      var raw = input.value.trim();
-      if (raw === original) return;
-      if (raw === '') {
-        changes.push({ month: monthParam, category: input.getAttribute('data-category'), amount: 0 });
-        return;
-      }
-      var amount = parseFloat(raw.replace(',', '.'));
-      if (isNaN(amount) || amount <= 0) {
-        invalid = input;
-        return;
-      }
-      changes.push({ month: monthParam, category: input.getAttribute('data-category'), amount: amount });
-    });
-    if (invalid) {
-      markInvalid(invalid);
-      showToast('Bitte gültige Beträge eingeben (z. B. 150 oder 149,90)', 'error');
-      return;
-    }
-    if (changes.length === 0) {
-      closeSheet('budgets-overlay');
-      return;
-    }
-    var unbusy = busy(btn);
-    try {
-      await postJson('/api/budgets/batch', { changes: changes }, 'PUT');
-      closeSheet('budgets-overlay');
-      showToast('Budgets gespeichert ✓', 'ok');
-      await afterMutation(refreshDashboard);
-    } catch (err) {
-      showToast(err.message, 'error');
-    } finally {
-      unbusy();
-    }
-    return;
-  }
-
   if (form.id === 'edit-form') {
     e.preventDefault();
     if (!EDITING_ID) return;
@@ -1287,10 +1045,6 @@ export const DashboardView: FC<DashboardProps> = ({
   today,
   hasMore,
   recurringCount,
-  budgets,
-  monthBudgets,
-  defaultBudgets,
-  hasMonthSpecific,
   layout = 'mobile',
 }) => {
   const others = members.filter((m) => m.name !== userName);
@@ -1347,16 +1101,6 @@ export const DashboardView: FC<DashboardProps> = ({
             debts={debts}
             myContribution={myContribution}
             contributionBooked={contributionBooked}
-          />
-        </div>
-
-        <div id="budgets-frag" class="mb-4 md:mb-6">
-          <BudgetsCard
-            budgets={budgets}
-            monthLabel={monthLabel}
-            monthBudgets={monthBudgets}
-            defaultBudgets={defaultBudgets}
-            hasMonthSpecific={hasMonthSpecific}
           />
         </div>
 

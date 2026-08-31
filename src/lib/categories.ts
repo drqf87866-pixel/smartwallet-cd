@@ -1,4 +1,4 @@
-/** Standard-Kategorien des Haushaltsbuchs – Grundlage für Magic Input, Dropdown und Budgets. */
+/** Standard-Kategorien des Haushaltsbuchs – Grundlage für Magic Input und Dropdown. */
 
 export const EXPENSE_CATEGORIES = [
   'Lebensmittel',
@@ -48,7 +48,7 @@ export function isAllowedCategory(category: string, type: 'income' | 'expense' |
   return EXPENSE_SET.has(category);
 }
 
-/** Prüfung gegen die gesamte kanonische Liste (z. B. Budgets, wiederkehrende Regeln). */
+/** Prüfung gegen die gesamte kanonische Liste (z. B. wiederkehrende Regeln). */
 export function isCanonicalCategory(category: string): boolean {
   return ALL_SET.has(category);
 }

@@ -9,8 +9,6 @@ import { describe, expect, it } from 'vitest';
 
 const BASE = 'https://smartwallet.test';
 
-type BudgetRow = { month: string; category: string; amount: number };
-
 /** json() liefert in den Workers-Typen unknown – hier zentral typisiert. */
 function json<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>;
@@ -141,81 +139,6 @@ describe('Transaktionen', () => {
   });
 });
 
-describe('Budgets', () => {
-  it('Standard-Budget setzen und auslesen', async () => {
-    const put = await SELF.fetch(`${BASE}/api/budgets`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', Cookie: annaCookie },
-      body: JSON.stringify({ month: 'default', category: 'Lebensmittel', amount: 400 }),
-    });
-    expect(put.status).toBe(200);
-
-    const get = await SELF.fetch(`${BASE}/api/budgets`, { headers: { Cookie: annaCookie } });
-    const { budgets } = await json<{ budgets: BudgetRow[] }>(get);
-    expect(budgets).toContainEqual({ month: 'default', category: 'Lebensmittel', amount: 400 });
-  });
-
-  it('monatsspezifisches Budget überschreibt den Standard per Effektiv-Logik (API speichert beide)', async () => {
-    const put = await SELF.fetch(`${BASE}/api/budgets`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', Cookie: annaCookie },
-      body: JSON.stringify({ month: '2026-09', category: 'Restaurant', amount: 120 }),
-    });
-    expect(put.status).toBe(200);
-
-    const get = await SELF.fetch(`${BASE}/api/budgets`, { headers: { Cookie: annaCookie } });
-    const { budgets } = await json<{ budgets: BudgetRow[] }>(get);
-    expect(budgets).toContainEqual({ month: '2026-09', category: 'Restaurant', amount: 120 });
-  });
-
-  it('amount 0 löscht das Budget', async () => {
-    await SELF.fetch(`${BASE}/api/budgets`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', Cookie: annaCookie },
-      body: JSON.stringify({ month: '2026-09', category: 'Restaurant', amount: 0 }),
-    });
-    const get = await SELF.fetch(`${BASE}/api/budgets`, { headers: { Cookie: annaCookie } });
-    const { budgets } = await json<{ budgets: BudgetRow[] }>(get);
-    expect(budgets.some((b) => b.category === 'Restaurant')).toBe(false);
-  });
-
-  it('ungültige Eingaben → 400 (reservierte Kategorie, falsches Monatsformat)', async () => {
-    const badCat = await SELF.fetch(`${BASE}/api/budgets`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', Cookie: annaCookie },
-      body: JSON.stringify({ month: 'default', category: 'Beitrag', amount: 50 }),
-    });
-    expect(badCat.status).toBe(400);
-
-    const badMonth = await SELF.fetch(`${BASE}/api/budgets`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', Cookie: annaCookie },
-      body: JSON.stringify({ month: '09-2026', category: 'Café', amount: 50 }),
-    });
-    expect(badMonth.status).toBe(400);
-  });
-
-  it('Batch-Endpoint setzt mehrere Budgets in einem Request', async () => {
-    const res = await SELF.fetch(`${BASE}/api/budgets/batch`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', Cookie: annaCookie },
-      body: JSON.stringify({
-        changes: [
-          { month: 'default', category: 'Transport', amount: 150 },
-          { month: 'default', category: 'Café', amount: 80 },
-        ],
-      }),
-    });
-    expect(res.status).toBe(200);
-    expect(await json<{ ok: boolean; count: number }>(res)).toMatchObject({ ok: true, count: 2 });
-
-    const get = await SELF.fetch(`${BASE}/api/budgets`, { headers: { Cookie: annaCookie } });
-    const { budgets } = await json<{ budgets: BudgetRow[] }>(get);
-    expect(budgets).toContainEqual({ month: 'default', category: 'Transport', amount: 150 });
-    expect(budgets).toContainEqual({ month: 'default', category: 'Café', amount: 80 });
-  });
-});
-
 describe('Dashboard-Fragmente', () => {
   it('Summary- und List-Fragment liefern konsistente HTML-Antworten', async () => {
     const headers = { Cookie: annaCookie, 'X-Fragments': '1' };
@@ -295,12 +218,6 @@ describe('Haushalts-Scoping', () => {
       body: JSON.stringify({ amount: 1, type: 'expense', scope: 'shared', category: 'Café' }),
     });
     expect(res.status).toBe(404);
-  });
-
-  it('Budgets sind haushaltsisoliert', async () => {
-    const get = await SELF.fetch(`${BASE}/api/budgets`, { headers: { Cookie: caroCookie } });
-    const { budgets } = await json<{ budgets: BudgetRow[] }>(get);
-    expect(budgets).toEqual([]);
   });
 });
 

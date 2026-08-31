@@ -6,7 +6,7 @@ import type { Env } from '../types';
 import { COOKIE_NAME } from '../lib/auth';
 import { LoginView } from '../views/login';
 import { RegisterView } from '../views/register';
-import { BudgetsCard, DashboardView, SummaryCards, TxList, TxListMore, type DashboardTx, type DebtRow } from '../views/dashboard';
+import { DashboardView, SummaryCards, TxList, TxListMore, type DashboardTx, type DebtRow } from '../views/dashboard';
 import { RecurringList, RecurringView } from '../views/recurring';
 import { StatsView } from '../views/stats';
 import { SettingsView } from '../views/settings';
@@ -201,13 +201,6 @@ pages.get('/dashboard/fragments/list', async (c) => {
   const layout = layoutParam === 'mobile' || layoutParam === 'desktop' ? layoutParam : undefined;
   const data = await loadListData(c, auth, monthParam(c.req.query('month')), undefined, { skipMaterialize: true });
   return c.html(<TxList {...data} layout={layout} />);
-});
-
-pages.get('/dashboard/fragments/budgets', async (c) => {
-  const auth = await requireDashboardAuth(c);
-  if (auth instanceof Response) return auth;
-  const data = await loadBudgetsData(c, auth, monthParam(c.req.query('month')));
-  return c.html(<BudgetsCard {...data} />);
 });
 
 /**
@@ -499,60 +492,6 @@ async function loadListData(
   };
 }
 
-/**
- * Daten für die Budget-Sektion: effektives Budget (monatsspezifisch, sonst
- * Standard), Verbrauch und Rest je Kategorie. Budgets sind Haushaltsbudgets –
- * der Verbrauch zählt daher alle Ausgaben der Kategorie im Haushalt
- * (gemeinsame und private), als Aggregat ohne Einzelpreise anderer Mitglieder.
- */
-async function loadBudgetsData(c: Context<Env>, auth: AuthInfo, month: string) {
-  const hid = auth.hid;
-  const prefix = `${month}%`;
-
-  const [budgetResult, spendResult] = await Promise.all([
-    c.env.DB
-      .prepare('SELECT month, category, amount FROM budgets WHERE household_id = ?1')
-      .bind(hid)
-      .all<{ month: string; category: string; amount: number }>(),
-    c.env.DB
-      .prepare(
-        `SELECT t.category AS category, COALESCE(SUM(t.amount), 0) AS spent
-         FROM transactions t
-         JOIN users u ON u.id = t.user_id
-         WHERE u.household_id = ?1 AND t.type = 'expense' AND t.date LIKE ?2
-         GROUP BY t.category`,
-      )
-      .bind(hid, prefix)
-      .all<{ category: string; spent: number }>(),
-  ]);
-
-  const spentByCategory = new Map(spendResult.results.map((row) => [row.category, row.spent]));
-  const monthBudgets: Record<string, number> = {};
-  const defaultBudgets: Record<string, number> = {};
-  for (const row of budgetResult.results) {
-    if (row.month === month) monthBudgets[row.category] = row.amount;
-    else if (row.month === 'default') defaultBudgets[row.category] = row.amount;
-  }
-
-  // Anzeigezeilen: effektives Budget = monatsspezifisch, sonst Standard-Alternative
-  const budgets = Object.keys({ ...defaultBudgets, ...monthBudgets })
-    .map((category) => {
-      const budget = monthBudgets[category] ?? defaultBudgets[category] ?? 0;
-      const spent = Math.round((spentByCategory.get(category) ?? 0) * 100) / 100;
-      return { category, budget, spent, rest: Math.round((budget - spent) * 100) / 100 };
-    })
-    .filter((row) => row.budget > 0)
-    .sort((a, b) => b.spent / b.budget - a.spent / a.budget);
-
-  return {
-    budgets,
-    monthBudgets,
-    defaultBudgets,
-    hasMonthSpecific: Object.keys(monthBudgets).length > 0,
-    monthLabel: monthLabelFor(month),
-  };
-}
-
 /** Daten für die Sektion „Wiederkehrende Zahlungen“ (Recurring-Fragment). */
 async function loadRecurringData(c: Context<Env>, hid: number, uid: number) {
   const { results: rules } = await c.env.DB
@@ -691,16 +630,15 @@ async function loadDashboardData(c: Context<Env>, auth: AuthInfo, month: string)
   await materializeRecurring(c.env.DB, auth.hid);
   const opts: LoaderOptions = { skipMaterialize: true };
 
-  const [summary, list, budgetsData, recurringCount] = await Promise.all([
+  const [summary, list, recurringCount] = await Promise.all([
     loadSummaryData(c, auth, month, opts),
     loadListData(c, auth, month, undefined, opts),
-    loadBudgetsData(c, auth, month),
     c.env.DB
       .prepare('SELECT COUNT(*) AS n FROM recurring_rules WHERE household_id = ?1')
       .bind(auth.hid)
       .first<{ n: number }>(),
   ]);
-  return { ...summary, ...list, ...budgetsData, recurringCount: recurringCount?.n ?? 0, month };
+  return { ...summary, ...list, recurringCount: recurringCount?.n ?? 0, month };
 }
 
 export default pages;

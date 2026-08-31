@@ -140,7 +140,7 @@ export function validateRecurringInput(
   if (category === 'Beitrag') {
     return { error: 'Die Kategorie "Beitrag" ist reserviert – nutze den Button „Beitrag buchen“' };
   }
-  // Nur kanonische Kategorien – Freitext würde in Budgets/Statistik silently verloren gehen
+  // Nur kanonische Kategorien – Freitext würde in Statistik silently verloren gehen
   if (!isAllowedCategory(category, body.type)) {
     return { error: 'Unbekannte Kategorie – bitte eine Kategorie aus der Auswahlliste wählen' };
   }

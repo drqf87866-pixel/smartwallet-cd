@@ -3,8 +3,7 @@
 --           bzw: npm run db:init:remote   (produktive D1)
 -- Kompletter Reset (lokal, löscht Daten!): npm run db:reset
 -- Migration bestehender Instanzen: migrations/002_households.sql,
--- migrations/003_monthly_contribution.sql, migrations/004_recurring.sql,
--- migrations/005_budgets.sql
+-- migrations/003_monthly_contribution.sql, migrations/004_recurring.sql
 
 -- Haushalte: Registrierung erstellt einen neuen Haushalt oder tritt per
 -- Einladungscode einem bestehenden bei (beliebig viele Mitglieder).
@@ -86,16 +85,6 @@ CREATE TABLE IF NOT EXISTS recurring_skips (
 );
 
 CREATE INDEX IF NOT EXISTS idx_recurring_household ON recurring_rules(household_id);
-
--- Budgets pro Kategorie: month = 'default' gilt für alle Monate, solange kein
--- monatsspezifischer Eintrag (YYYY-MM) existiert. Kein Budget = Kategorie unbegrenzt.
-CREATE TABLE IF NOT EXISTS budgets (
-  household_id INTEGER NOT NULL REFERENCES households(id) ON DELETE CASCADE,
-  month        TEXT    NOT NULL,
-  category     TEXT    NOT NULL,
-  amount       REAL    NOT NULL CHECK (amount > 0),
-  PRIMARY KEY (household_id, month, category)
-);
 
 -- Schlüssel-Werte-Speicher pro Haushalt:
 --   joint_start_balance = Startstand des Gemeinschaftskontos (Zahl als TEXT)
