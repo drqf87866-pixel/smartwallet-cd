@@ -450,37 +450,55 @@ async function loadStatsData(c: Context<Env>, auth: AuthInfo, month: string) {
     c.env.DB
       .prepare(
         `SELECT substr(t.date, 1, 7) AS ym,
-                COALESCE(SUM(CASE WHEN t.type = 'income' THEN t.amount END), 0) AS income,
-                COALESCE(SUM(CASE WHEN t.type = 'expense' THEN t.amount END), 0) AS expense
+                COALESCE(SUM(CASE WHEN t.type = 'income' AND t.scope = 'personal' THEN t.amount ELSE 0 END), 0) AS own_income,
+                COALESCE(SUM(CASE WHEN t.type = 'income' AND t.scope = 'shared' THEN t.amount ELSE 0 END), 0) AS shared_income,
+                COALESCE(SUM(CASE WHEN t.type = 'expense' AND t.scope = 'personal' THEN t.amount ELSE 0 END), 0) AS own_expense,
+                COALESCE(SUM(CASE WHEN t.type = 'expense' AND t.scope = 'shared' THEN t.amount ELSE 0 END), 0) AS shared_expense
          FROM transactions t
          JOIN users u ON u.id = t.user_id
          WHERE u.household_id = ?1 AND t.type IN ('income', 'expense') AND t.date >= ?2 AND (t.scope = 'shared' OR t.user_id = ?3)
          GROUP BY ym`,
       )
       .bind(hid, `${windowStart}T00:00:00.000Z`, auth.uid)
-      .all<{ ym: string; income: number; expense: number }>(),
+      .all<{ ym: string; own_income: number; shared_income: number; own_expense: number; shared_expense: number }>(),
     c.env.DB
       .prepare(
-        `SELECT t.description, t.category, t.amount, t.date, u.name AS created_by
+        // Kein ORDER BY hier: Ranking erfolgt erst unten nach dem eigenen Anteil
+        // (voller Betrag bei persönlich, Betrag/memberCount bei gemeinsam).
+        `SELECT t.description, t.category, t.amount, t.date, t.scope, u.name AS created_by
          FROM transactions t
          JOIN users u ON u.id = t.user_id
          WHERE u.household_id = ?1 AND t.type = 'expense' AND t.date LIKE ?2 AND (t.scope = 'shared' OR t.user_id = ?3)
-         ORDER BY t.amount DESC
-         LIMIT 10`,
+         LIMIT 500`,
       )
       .bind(hid, prefix, auth.uid)
-      .all<{ description: string; category: string; amount: number; date: string; created_by: string }>(),
+      .all<{ description: string; category: string; amount: number; date: string; scope: 'personal' | 'shared'; created_by: string }>(),
     c.env.DB
       .prepare('SELECT id, name FROM users WHERE household_id = ?1 ORDER BY id')
       .bind(hid)
       .all<{ id: number; name: string }>(),
   ]);
   const historyRows = historyResult.results;
-  const topRows = topResult.results;
 
   const memberCount = Math.max(membersResult.results.length, 1);
 
-  // Lücken im 6-Monats-Fenster mit 0 auffüllen (für die Balken-X-Achse)
+  // Top-Ausgaben: konsequent auf den eigenen Anteil umgestellt – bei gemeinsamen
+  // Ausgaben zählt (wie überall sonst auf der Seite) 1/N des Betrags, nicht die
+  // volle Buchung. Ranking und Anzeige beziehen sich beide auf diesen Anteil.
+  const topExpenses = topResult.results
+    .map((row) => ({
+      description: row.description,
+      category: row.category,
+      date: row.date,
+      scope: row.scope,
+      created_by: row.created_by,
+      amount: Math.round((row.scope === 'shared' ? row.amount / memberCount : row.amount) * 100) / 100,
+    }))
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, 10);
+
+  // Lücken im 6-Monats-Fenster mit 0 auffüllen (für die Balken-X-Achse); Pro-Kopf-Sicht
+  // wie bei den Kategorien: eigene Beträge voll, gemeinsame 1/N auf alle Mitglieder verteilt
   const historyByMonth = new Map(historyRows.map((row) => [row.ym, row]));
   const history: { ym: string; income: number; expense: number }[] = [];
   for (let i = -5; i <= 0; i++) {
@@ -488,8 +506,8 @@ async function loadStatsData(c: Context<Env>, auth: AuthInfo, month: string) {
     const row = historyByMonth.get(ym);
     history.push({
       ym,
-      income: row ? Math.round(row.income * 100) / 100 : 0,
-      expense: row ? Math.round(row.expense * 100) / 100 : 0,
+      income: row ? Math.round((row.own_income + row.shared_income / memberCount) * 100) / 100 : 0,
+      expense: row ? Math.round((row.own_expense + row.shared_expense / memberCount) * 100) / 100 : 0,
     });
   }
 
@@ -501,8 +519,9 @@ async function loadStatsData(c: Context<Env>, auth: AuthInfo, month: string) {
       spent: Math.round((row.own + row.shared / memberCount) * 100) / 100,
     }))
     .sort((a, b) => b.spent - a.spent);
-  const categoryTotal =
-    Math.round(categorySplitResult.results.reduce((sum, row) => sum + row.own + row.shared, 0) * 100) / 100;
+  // Aus den bereits Pro-Kopf-gerechneten Kategorien abgeleitet, damit Bilanz-Karte
+  // und Kategorien-Donut nie auseinanderlaufen können.
+  const categoryTotal = Math.round(categories.reduce((sum, row) => sum + row.spent, 0) * 100) / 100;
 
   return {
     userName: auth.name,
@@ -513,8 +532,9 @@ async function loadStatsData(c: Context<Env>, auth: AuthInfo, month: string) {
     nextMonth: shiftMonth(month, 1),
     categories,
     categoryTotal,
+    memberCount,
     history,
-    topExpenses: topRows,
+    topExpenses,
   };
 }
 

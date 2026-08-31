@@ -1,4 +1,5 @@
 import type { FC } from 'hono/jsx';
+import type { TransactionScope } from '../types';
 import { Layout } from './layout';
 import { BottomNav, MagicSheet, UserChip } from './shared';
 import { fmt, fmtDay, fmtMonthShort } from '../lib/format';
@@ -10,6 +11,7 @@ export type TopExpense = {
   category: string;
   amount: number;
   date: string;
+  scope: TransactionScope;
   created_by: string;
 };
 
@@ -22,6 +24,7 @@ export type StatsProps = {
   nextMonth: string;
   categories: CategorySlice[];
   categoryTotal: number;
+  memberCount: number;
   history: HistoryMonth[];
   topExpenses: TopExpense[];
 };
@@ -152,12 +155,12 @@ export const StatsView: FC<StatsProps> = ({
   nextMonth,
   categories,
   categoryTotal,
+  memberCount,
   history,
   topExpenses,
 }) => {
   const incomeTotal = history.find((row) => row.ym === month)?.income ?? 0;
   const balance = incomeTotal - categoryTotal;
-  const donutTotal = Math.round(categories.reduce((sum, slice) => sum + slice.spent, 0) * 100) / 100;
 
   return (
     <Layout title="Statistik">
@@ -203,7 +206,7 @@ export const StatsView: FC<StatsProps> = ({
         {/* Kategorien – priorisiert: Donut nur für die Top-Kategorien lesbar */}
         <section class="card mb-4">
           <h2 class="mb-4 text-sm font-medium text-slate-500">Ausgaben nach Kategorie · {monthLabel}</h2>
-          <CategoryDonut slices={categories} total={donutTotal} />
+          <CategoryDonut slices={categories} total={categoryTotal} />
         </section>
 
         <section class="card mb-4">
@@ -213,6 +216,9 @@ export const StatsView: FC<StatsProps> = ({
 
         <section class="card mb-4">
           <h2 class="mb-2 text-sm font-medium text-slate-500">Top-Ausgaben · {monthLabel}</h2>
+          {memberCount > 1 && (
+            <p class="mb-2 text-xs text-slate-500">Bei gemeinsamen Ausgaben zählt dein Anteil (1/{memberCount}).</p>
+          )}
           {topExpenses.length === 0 ? (
             <p class="py-6 text-center text-sm text-slate-500">Keine Ausgaben in diesem Monat.</p>
           ) : (
@@ -229,6 +235,7 @@ export const StatsView: FC<StatsProps> = ({
                       </span>
                       <span class="block text-xs text-slate-500">
                         {fmtDay(expense.date)} · {expense.category} · {expense.created_by}
+                        {expense.scope === 'shared' && memberCount > 1 ? ' · Anteil' : ''}
                       </span>
                     </span>
                   </span>
