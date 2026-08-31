@@ -9,26 +9,34 @@ recurring.use('/api/recurring', requireAuth);
 recurring.use('/api/recurring/:id', requireAuth);
 recurring.use('/api/recurring/:id/book', requireAuth);
 
-/** Lädt eine Regel, sofern sie zum Haushalt des Aufrufers gehört. */
+/**
+ * Lädt eine Regel, sofern sie zum Haushalt des Aufrufers gehört. Persönliche
+ * Regeln anderer Mitglieder gelten dabei als nicht vorhanden.
+ */
 async function loadHouseholdRule(
   db: Env['Bindings']['DB'],
   id: number,
   householdId: number,
+  callerId: number,
 ): Promise<RecurringRule | null> {
   if (!Number.isInteger(id) || id <= 0) return null;
-  return (
-    (await db
-      .prepare('SELECT * FROM recurring_rules WHERE id = ?1 AND household_id = ?2')
-      .bind(id, householdId)
-      .first<RecurringRule>()) ?? null
-  );
+  const rule = await db
+    .prepare('SELECT * FROM recurring_rules WHERE id = ?1 AND household_id = ?2')
+    .bind(id, householdId)
+    .first<RecurringRule>();
+  if (!rule || (rule.scope === 'personal' && rule.user_id !== callerId)) return null;
+  return rule;
 }
 
 recurring.get('/api/recurring', async (c) => {
   const householdId = c.get('householdId');
+  const userId = c.get('userId');
+  // Persönliche Regeln anderer Mitglieder bleiben ausgeblendet.
   const { results: rules } = await c.env.DB
-    .prepare('SELECT * FROM recurring_rules WHERE household_id = ?1 ORDER BY active DESC, id ASC')
-    .bind(householdId)
+    .prepare(
+      "SELECT * FROM recurring_rules WHERE household_id = ?1 AND (scope = 'shared' OR user_id = ?2) ORDER BY active DESC, id ASC",
+    )
+    .bind(householdId, userId)
     .all<RecurringRule>();
 
   const today = todayBerlin();
@@ -88,7 +96,7 @@ recurring.post('/api/recurring', async (c) => {
  */
 recurring.post('/api/recurring/:id/book', async (c) => {
   const id = Number(c.req.param('id'));
-  const rule = await loadHouseholdRule(c.env.DB, id, c.get('householdId'));
+  const rule = await loadHouseholdRule(c.env.DB, id, c.get('householdId'), c.get('userId'));
   if (!rule) {
     return c.json({ error: 'Regel nicht gefunden' }, 404);
   }
@@ -130,7 +138,7 @@ recurring.post('/api/recurring/:id/book', async (c) => {
 
 recurring.put('/api/recurring/:id', async (c) => {
   const id = Number(c.req.param('id'));
-  const existing = await loadHouseholdRule(c.env.DB, id, c.get('householdId'));
+  const existing = await loadHouseholdRule(c.env.DB, id, c.get('householdId'), c.get('userId'));
   if (!existing) {
     return c.json({ error: 'Regel nicht gefunden' }, 404);
   }
@@ -175,7 +183,7 @@ recurring.put('/api/recurring/:id', async (c) => {
     )
     .run();
 
-  const updated = await loadHouseholdRule(c.env.DB, id, c.get('householdId'));
+  const updated = await loadHouseholdRule(c.env.DB, id, c.get('householdId'), c.get('userId'));
   return c.json({
     rule: updated
       ? { ...updated, next_due: updated.active ? nextDueDate(updated, todayBerlin()) : null }
@@ -185,7 +193,7 @@ recurring.put('/api/recurring/:id', async (c) => {
 
 recurring.delete('/api/recurring/:id', async (c) => {
   const id = Number(c.req.param('id'));
-  const existing = await loadHouseholdRule(c.env.DB, id, c.get('householdId'));
+  const existing = await loadHouseholdRule(c.env.DB, id, c.get('householdId'), c.get('userId'));
   if (!existing) {
     return c.json({ error: 'Regel nicht gefunden' }, 404);
   }

@@ -134,7 +134,7 @@ pages.get('/recurring', async (c) => {
   if (!auth) return c.redirect('/login');
 
   const [data, household, memberCountRow] = await Promise.all([
-    loadRecurringData(c, auth.hid),
+    loadRecurringData(c, auth.hid, auth.uid),
     c.env.DB
       .prepare('SELECT name FROM households WHERE id = ?1')
       .bind(auth.hid)
@@ -159,7 +159,7 @@ pages.get('/recurring', async (c) => {
 pages.get('/recurring/fragments/list', async (c) => {
   const auth = await requireDashboardAuth(c);
   if (auth instanceof Response) return auth;
-  const data = await loadRecurringData(c, auth.hid);
+  const data = await loadRecurringData(c, auth.hid, auth.uid);
   return c.html(<RecurringList rules={data.rules} />);
 });
 
@@ -372,16 +372,17 @@ async function loadListData(c: Context<Env>, auth: AuthInfo, month: string) {
   // Listen-Fragment-Abruf erzeugt fällige wiederkehrende Buchungen
   await materializeRecurring(c.env.DB, hid);
 
-  // Historie des Haushalts im gewählten Monat
+  // Historie des Haushalts im gewählten Monat – persönliche Buchungen anderer
+  // Mitglieder bleiben ausgeblendet, nur eigene + gemeinsame sind sichtbar
   const { results: transactions } = await c.env.DB.prepare(
     `SELECT t.id, u.name AS created_by, t.amount, t.type, t.category, t.description, t.date, t.scope, t.paid_from, t.recurring_id
      FROM transactions t
      JOIN users u ON u.id = t.user_id
-     WHERE u.household_id = ?1 AND t.date LIKE ?2
+     WHERE u.household_id = ?1 AND t.date LIKE ?2 AND (t.scope = 'shared' OR t.user_id = ?3)
      ORDER BY t.date DESC, t.id DESC
      LIMIT 100`,
   )
-    .bind(hid, prefix)
+    .bind(hid, prefix, auth.uid)
     .all<DashboardTx>();
 
   return {
@@ -394,10 +395,12 @@ async function loadListData(c: Context<Env>, auth: AuthInfo, month: string) {
 }
 
 /** Daten für die Sektion „Wiederkehrende Zahlungen“ (Recurring-Fragment). */
-async function loadRecurringData(c: Context<Env>, hid: number) {
+async function loadRecurringData(c: Context<Env>, hid: number, uid: number) {
   const { results: rules } = await c.env.DB
-    .prepare('SELECT * FROM recurring_rules WHERE household_id = ?1 ORDER BY active DESC, id ASC')
-    .bind(hid)
+    .prepare(
+      "SELECT * FROM recurring_rules WHERE household_id = ?1 AND (scope = 'shared' OR user_id = ?2) ORDER BY active DESC, id ASC",
+    )
+    .bind(hid, uid)
     .all<RecurringRule>();
   const today = todayBerlin();
 
@@ -418,40 +421,32 @@ async function loadRecurringData(c: Context<Env>, hid: number) {
   return { rules: rulesWithNextDue, today };
 }
 
-/** Ausgaben je Kategorie für einen Monat (YYYY-MM) – von Budgets und Stats genutzt. */
-async function loadCategorySpent(
-  db: Env['Bindings']['DB'],
-  hid: number,
-  month: string,
-): Promise<{ category: string; spent: number }[]> {
-  const { results } = await db
-    .prepare(
-      `SELECT t.category AS category, COALESCE(SUM(t.amount), 0) AS spent
-       FROM transactions t
-       JOIN users u ON u.id = t.user_id
-       WHERE u.household_id = ?1 AND t.type = 'expense' AND t.date LIKE ?2
-       GROUP BY t.category`,
-    )
-    .bind(hid, `${month}%`)
-    .all<{ category: string; spent: number }>();
-  return results;
-}
-
 /** Daten für die Statistik-Seite. */
 async function loadStatsData(c: Context<Env>, auth: AuthInfo, month: string) {
   const hid = auth.hid;
   const prefix = `${month}%`;
-  // 12-Monats-Fenster: vom ersten Tag des Monats vor 11 Monaten bis Monatsende
-  const windowStart = `${shiftMonth(month, -11)}-01`;
+  // 6-Monats-Fenster: vom ersten Tag des Monats vor 5 Monaten bis Monatsende
+  const windowStart = `${shiftMonth(month, -5)}-01`;
 
   await materializeRecurring(c.env.DB, hid);
 
-  const [household, categoryResult, historyResult, topResult, membersResult, personRows] = await Promise.all([
+  const [household, categorySplitResult, historyResult, topResult, membersResult] = await Promise.all([
     c.env.DB
       .prepare('SELECT name FROM households WHERE id = ?1')
       .bind(hid)
       .first<{ name: string }>(),
-    loadCategorySpent(c.env.DB, hid, month),
+    c.env.DB
+      .prepare(
+        `SELECT t.category AS category,
+                COALESCE(SUM(CASE WHEN t.paid_from = 'joint' OR (t.scope = 'shared' AND t.paid_from = 'private') THEN t.amount ELSE 0 END), 0) AS shared,
+                COALESCE(SUM(CASE WHEN t.paid_from = 'joint' OR (t.scope = 'shared' AND t.paid_from = 'private') THEN 0 ELSE t.amount END), 0) AS own
+         FROM transactions t
+         JOIN users u ON u.id = t.user_id
+         WHERE u.household_id = ?1 AND t.type = 'expense' AND t.date LIKE ?2 AND (t.scope = 'shared' OR t.user_id = ?3)
+         GROUP BY t.category`,
+      )
+      .bind(hid, prefix, auth.uid)
+      .all<{ category: string; shared: number; own: number }>(),
     c.env.DB
       .prepare(
         `SELECT substr(t.date, 1, 7) AS ym,
@@ -459,60 +454,36 @@ async function loadStatsData(c: Context<Env>, auth: AuthInfo, month: string) {
                 COALESCE(SUM(CASE WHEN t.type = 'expense' THEN t.amount END), 0) AS expense
          FROM transactions t
          JOIN users u ON u.id = t.user_id
-         WHERE u.household_id = ?1 AND t.type IN ('income', 'expense') AND t.date >= ?2
+         WHERE u.household_id = ?1 AND t.type IN ('income', 'expense') AND t.date >= ?2 AND (t.scope = 'shared' OR t.user_id = ?3)
          GROUP BY ym`,
       )
-      .bind(hid, `${windowStart}T00:00:00.000Z`)
+      .bind(hid, `${windowStart}T00:00:00.000Z`, auth.uid)
       .all<{ ym: string; income: number; expense: number }>(),
     c.env.DB
       .prepare(
         `SELECT t.description, t.category, t.amount, t.date, u.name AS created_by
          FROM transactions t
          JOIN users u ON u.id = t.user_id
-         WHERE u.household_id = ?1 AND t.type = 'expense' AND t.date LIKE ?2
+         WHERE u.household_id = ?1 AND t.type = 'expense' AND t.date LIKE ?2 AND (t.scope = 'shared' OR t.user_id = ?3)
          ORDER BY t.amount DESC
          LIMIT 10`,
       )
-      .bind(hid, prefix)
+      .bind(hid, prefix, auth.uid)
       .all<{ description: string; category: string; amount: number; date: string; created_by: string }>(),
     c.env.DB
       .prepare('SELECT id, name FROM users WHERE household_id = ?1 ORDER BY id')
       .bind(hid)
       .all<{ id: number; name: string }>(),
-    c.env.DB
-      .prepare(
-        `SELECT u.name,
-                COALESCE(SUM(CASE WHEN t.scope = 'personal' AND t.paid_from = 'private' THEN t.amount ELSE 0 END), 0) AS own_full,
-                COALESCE(SUM(CASE WHEN t.paid_from = 'joint' OR (t.scope = 'shared' AND t.paid_from = 'private') THEN t.amount ELSE 0 END), 0) AS shared
-         FROM users u
-         LEFT JOIN transactions t
-           ON t.user_id = u.id AND t.type = 'expense' AND t.date LIKE ?2
-         WHERE u.household_id = ?1
-         GROUP BY u.id, u.name`,
-      )
-      .bind(hid, prefix)
-      .all<{ name: string; own_full: number; shared: number }>(),
   ]);
-  const categoryRows = categoryResult;
   const historyRows = historyResult.results;
   const topRows = topResult.results;
 
-  // Ausgaben pro Person: persönliche private Ausgaben komplett,
-  // gemeinsame (Gemeinschaftskonto oder private Vorschüsse) als Haushalts-Pool
-  // gleichmäßig 1/N auf alle Mitglieder verteilt
   const memberCount = Math.max(membersResult.results.length, 1);
-  const sharedTotal = personRows.results.reduce((sum, row) => sum + row.shared, 0);
-  const personExpenses = personRows.results
-    .map((row) => ({
-      name: row.name,
-      amount: Math.round((row.own_full + sharedTotal / memberCount) * 100) / 100,
-    }))
-    .sort((a, b) => b.amount - a.amount);
 
-  // Lücken im 12-Monats-Fenster mit 0 auffüllen (für die Balken-X-Achse)
+  // Lücken im 6-Monats-Fenster mit 0 auffüllen (für die Balken-X-Achse)
   const historyByMonth = new Map(historyRows.map((row) => [row.ym, row]));
   const history: { ym: string; income: number; expense: number }[] = [];
-  for (let i = -11; i <= 0; i++) {
+  for (let i = -5; i <= 0; i++) {
     const ym = shiftMonth(month, i);
     const row = historyByMonth.get(ym);
     history.push({
@@ -522,10 +493,16 @@ async function loadStatsData(c: Context<Env>, auth: AuthInfo, month: string) {
     });
   }
 
-  const categories = categoryRows
-    .map((row) => ({ category: row.category, spent: Math.round(row.spent * 100) / 100 }))
+  // Kategorien: persönliche Ausgaben voll, Gemeinschaftsausgaben (Gemeinschaftskonto
+  // oder private Vorschüsse) gleichmäßig 1/N auf alle Mitglieder verteilt (Pro-Kopf-Sicht)
+  const categories = categorySplitResult.results
+    .map((row) => ({
+      category: row.category,
+      spent: Math.round((row.own + row.shared / memberCount) * 100) / 100,
+    }))
     .sort((a, b) => b.spent - a.spent);
-  const categoryTotal = Math.round(categories.reduce((sum, row) => sum + row.spent, 0) * 100) / 100;
+  const categoryTotal =
+    Math.round(categorySplitResult.results.reduce((sum, row) => sum + row.own + row.shared, 0) * 100) / 100;
 
   return {
     userName: auth.name,
@@ -536,7 +513,6 @@ async function loadStatsData(c: Context<Env>, auth: AuthInfo, month: string) {
     nextMonth: shiftMonth(month, 1),
     categories,
     categoryTotal,
-    personExpenses,
     history,
     topExpenses: topRows,
   };

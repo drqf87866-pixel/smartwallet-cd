@@ -4,7 +4,6 @@ import { BottomNav, MagicSheet, UserChip } from './shared';
 import { fmt, fmtDay, fmtMonthShort } from '../lib/format';
 
 export type CategorySlice = { category: string; spent: number };
-export type PersonExpense = { name: string; amount: number };
 export type HistoryMonth = { ym: string; income: number; expense: number };
 export type TopExpense = {
   description: string;
@@ -23,7 +22,6 @@ export type StatsProps = {
   nextMonth: string;
   categories: CategorySlice[];
   categoryTotal: number;
-  personExpenses: PersonExpense[];
   history: HistoryMonth[];
   topExpenses: TopExpense[];
 };
@@ -90,7 +88,7 @@ const CategoryDonut: FC<{ slices: CategorySlice[]; total: number }> = ({ slices,
   );
 };
 
-/** 12-Monats-Verlauf: gruppierte Balken (Einnahmen/Ausgaben) als SVG. */
+/** 6-Monats-Verlauf: gruppierte Balken (Einnahmen/Ausgaben) als SVG. */
 const HistoryBars: FC<{ history: HistoryMonth[] }> = ({ history }) => {
   const max = Math.max(1, ...history.map((row) => Math.max(row.income, row.expense)));
   const plotHeight = 110;
@@ -98,8 +96,8 @@ const HistoryBars: FC<{ history: HistoryMonth[] }> = ({ history }) => {
   const columnWidth = 360 / history.length;
 
   return (
-    <div class="overflow-x-auto">
-      <svg viewBox="0 0 360 140" class="w-full min-w-[320px]" role="img" aria-label="Verlauf der letzten 12 Monate">
+    <div>
+      <svg viewBox="0 0 360 140" class="w-full" role="img" aria-label="Verlauf der letzten 6 Monate">
         <line x1="0" y1={baseline} x2="360" y2={baseline} stroke="hsl(32, 15%, 85%)" stroke-width="1" />
         {history.map((row, index) => {
           const incomeHeight = (row.income / max) * plotHeight;
@@ -154,12 +152,12 @@ export const StatsView: FC<StatsProps> = ({
   nextMonth,
   categories,
   categoryTotal,
-  personExpenses,
   history,
   topExpenses,
 }) => {
   const incomeTotal = history.find((row) => row.ym === month)?.income ?? 0;
   const balance = incomeTotal - categoryTotal;
+  const donutTotal = Math.round(categories.reduce((sum, slice) => sum + slice.spent, 0) * 100) / 100;
 
   return (
     <Layout title="Statistik">
@@ -205,35 +203,11 @@ export const StatsView: FC<StatsProps> = ({
         {/* Kategorien – priorisiert: Donut nur für die Top-Kategorien lesbar */}
         <section class="card mb-4">
           <h2 class="mb-4 text-sm font-medium text-slate-500">Ausgaben nach Kategorie · {monthLabel}</h2>
-          <CategoryDonut slices={categories} total={categoryTotal} />
+          <CategoryDonut slices={categories} total={donutTotal} />
         </section>
 
         <section class="card mb-4">
-          <h2 class="mb-4 text-sm font-medium text-slate-500">Ausgaben pro Person · {monthLabel}</h2>
-          {personExpenses.every((person) => person.amount <= 0) ? (
-            <p class="py-6 text-center text-sm text-slate-500">Keine Ausgaben in diesem Monat.</p>
-          ) : (
-            <div>
-              {personExpenses.length > 1 && (
-                <p class="mb-2 text-xs text-slate-500">Gemeinsame Ausgaben werden gleichmäßig aufgeteilt.</p>
-              )}
-              <ul class="space-y-1.5 text-sm">
-                {personExpenses.map((person) => (
-                  <li class="flex items-center justify-between gap-2">
-                    <span class="flex min-w-0 items-center gap-2">
-                      <span class="h-2.5 w-2.5 shrink-0 rounded-full bg-rose-600" aria-hidden="true"></span>
-                      <span class="truncate text-slate-600">{person.name}</span>
-                    </span>
-                    <span class="whitespace-nowrap tabular-nums text-slate-500">{fmt(person.amount)}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </section>
-
-        <section class="card mb-4">
-          <h2 class="mb-4 text-sm font-medium text-slate-500">Verlauf der letzten 12 Monate</h2>
+          <h2 class="mb-4 text-sm font-medium text-slate-500">Verlauf der letzten 6 Monate</h2>
           <HistoryBars history={history} />
         </section>
 

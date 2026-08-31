@@ -13,8 +13,11 @@ transactions.use('/api/transactions/:id/make-recurring', requireAuth);
 transactions.get('/api/transactions', async (c) => {
   const month = c.req.query('month'); // optional: "YYYY-MM"
   const householdId = c.get('householdId');
+  const userId = c.get('userId');
   const binds: (string | number)[] = [householdId];
 
+  // Persönliche Buchungen anderer Mitglieder werden nicht ausgeliefert –
+  // nur eigene ('personal') und gemeinsame ('shared') Buchungen.
   let sql = `
     SELECT t.id, t.user_id, u.name AS created_by, t.amount, t.type, t.category,
            t.description, t.date, t.scope, t.paid_from, t.recurring_id
@@ -30,6 +33,8 @@ transactions.get('/api/transactions', async (c) => {
     sql += ' AND t.date LIKE ?2';
     binds.push(`${month}%`);
   }
+  sql += ` AND (t.scope = 'shared' OR t.user_id = ?${binds.length + 1})`;
+  binds.push(userId);
   sql += ' ORDER BY t.date DESC LIMIT 200';
 
   const { results } = await c.env.DB.prepare(sql)
@@ -67,12 +72,15 @@ transactions.post('/api/transactions', async (c) => {
 
 /**
  * Lädt eine Transaktion, sofern sie zum Haushalt des Aufrufers gehört
- * und nicht schreibgeschützt ist (settlement/Beitrag).
+ * und nicht schreibgeschützt ist (settlement/Beitrag). Persönliche
+ * Buchungen anderer Mitglieder gelten dabei als „nicht gefunden“ – so
+ * lassen sie sich auch per erratener ID nicht einsehen oder verändern.
  */
 async function loadEditableTransaction(
   db: Env['Bindings']['DB'],
   id: number,
   householdId: number,
+  callerId: number,
 ): Promise<{ row: Record<string, unknown> } | { error: string; status: number }> {
   if (!Number.isInteger(id) || id <= 0) {
     return { error: 'Ungültige Transaktions-ID', status: 400 };
@@ -89,7 +97,7 @@ async function loadEditableTransaction(
     .bind(id, householdId)
     .all();
   const row = results[0];
-  if (!row) {
+  if (!row || (row.scope === 'personal' && row.user_id !== callerId)) {
     return { error: 'Transaktion nicht gefunden', status: 404 };
   }
   if (row.type === 'settlement' || row.category === 'Beitrag') {
@@ -100,7 +108,7 @@ async function loadEditableTransaction(
 
 transactions.put('/api/transactions/:id', async (c) => {
   const id = Number(c.req.param('id'));
-  const found = await loadEditableTransaction(c.env.DB, id, c.get('householdId'));
+  const found = await loadEditableTransaction(c.env.DB, id, c.get('householdId'), c.get('userId'));
   if ('error' in found) {
     return c.json({ error: found.error }, found.status as 400 | 403 | 404);
   }
@@ -142,7 +150,7 @@ transactions.put('/api/transactions/:id', async (c) => {
 
 transactions.delete('/api/transactions/:id', async (c) => {
   const id = Number(c.req.param('id'));
-  const found = await loadEditableTransaction(c.env.DB, id, c.get('householdId'));
+  const found = await loadEditableTransaction(c.env.DB, id, c.get('householdId'), c.get('userId'));
   if ('error' in found) {
     return c.json({ error: found.error }, found.status as 400 | 403 | 404);
   }
@@ -170,7 +178,7 @@ transactions.delete('/api/transactions/:id', async (c) => {
 transactions.post('/api/transactions/:id/make-recurring', async (c) => {
   const id = Number(c.req.param('id'));
   const householdId = c.get('householdId');
-  const found = await loadEditableTransaction(c.env.DB, id, householdId);
+  const found = await loadEditableTransaction(c.env.DB, id, householdId, c.get('userId'));
   if ('error' in found) {
     return c.json({ error: found.error }, found.status as 400 | 403 | 404);
   }
